@@ -1,6 +1,6 @@
 ---
-title: AI Chatbot
-emoji: 🤖
+title: Gemini Powered Chatbot
+
 colorFrom: indigo
 colorTo: pink
 sdk: docker
