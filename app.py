@@ -1,14 +1,12 @@
 from flask import Flask, request, jsonify, render_template_string
 import google.generativeai as genai
-import os
 
 app = Flask(__name__)
 
-# ✅ Replace with your actual Gemini API key
-GEMINI_API_KEY = "AIzaSyC-0i3sof8_6HMTmiv9Xtx3I-Oa6rDasXc"
-genai.configure(api_key=GEMINI_API_KEY)
+# ✅ Replace this with your actual Gemini API key
+genai.configure(api_key="AIzaSyC-0i3sof8_6HMTmiv9Xtx3I-Oa6rDasXc")
 
-# Load Gemini model
+# ✅ Initialize the Gemini model
 model = genai.GenerativeModel("gemini-pro")
 
 @app.route("/")
@@ -17,7 +15,7 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Gemini Chatbot</title>
+        <title>Gemini AI Chatbot</title>
         <style>
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -71,7 +69,7 @@ def index():
         </style>
     </head>
     <body>
-        <h2>🤖 Chat with Gemini AI</h2>
+        <h2>🤖 Chat with Gemini</h2>
         <div id="chat-box"></div>
         <form id="chat-form">
             <input type="text" id="message" placeholder="Type your message..." autocomplete="off" required />
@@ -120,8 +118,7 @@ def chat():
 
     try:
         response = model.generate_content(user_input)
-        reply = response.text.strip()
-        return jsonify({"reply": reply})
+        return jsonify({"reply": response.text.strip()})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
