@@ -3,11 +3,12 @@ import google.generativeai as genai
 
 app = Flask(__name__)
 
-# ✅ Replace this with your actual Gemini API key
+# ✅ REPLACE with your actual Gemini API key (keep it secret!)
 genai.configure(api_key="AIzaSyC-0i3sof8_6HMTmiv9Xtx3I-Oa6rDasXc")
 
-# ✅ Initialize the Gemini model
-model = genai.GenerativeModel("gemini-pro")
+# ✅ Use a supported model (use "gemini-1.5-flash" if quota exceeded)
+model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+
 
 @app.route("/")
 def index():
@@ -96,7 +97,7 @@ def index():
                     const data = await res.json();
                     appendMessage('Gemini', data.reply || data.error);
                 } catch (err) {
-                    appendMessage('Gemini', "Error fetching response.");
+                    appendMessage('Gemini', "⚠️ Error: Unable to fetch response.");
                 }
             };
 
@@ -120,7 +121,7 @@ def chat():
         response = model.generate_content(user_input)
         return jsonify({"reply": response.text.strip()})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"❌ {str(e)}"}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=7860)
+    app.run(host="0.0.0.0", port=5000)
