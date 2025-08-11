@@ -1,17 +1,50 @@
-from flask_sqlalchemy import SQLAlchemy
+import os
+import sqlite3
+import psycopg2
+from urllib.parse import urlparse
 
-db = SQLAlchemy()
+def get_connection():
+    """
+    Returns a database connection.
+    Uses DATABASE_URL if set (for Railway/PostgreSQL),
+    otherwise falls back to local SQLite.
+    """
+    database_url = os.environ.get("DATABASE_URL")
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    age = db.Column(db.Integer, nullable=True)
-    gender = db.Column(db.String(10), nullable=True)
-    medical_history = db.Column(db.Text, nullable=True)
+    if database_url:
+        # Railway will give a PostgreSQL URL in DATABASE_URL
+        url = urlparse(database_url)
+        conn = psycopg2.connect(
+            dbname=url.path[1:],
+            user=url.username,
+            password=url.password,
+            host=url.hostname,
+            port=url.port
+        )
+        return conn
+    else:
+        # Local SQLite database
+        conn = sqlite3.connect("local.db")
+        return conn
 
-class ChatHistory(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    message = db.Column(db.Text, nullable=False)
-    sender = db.Column(db.String(10), nullable=False)  # 'user' or 'bot'
-    timestamp = db.Column(db.DateTime, server_default=db.func.now())
+def init_db():
+    """
+    Creates a sample table if it doesn't exist.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+
+    # For PostgreSQL and SQLite compatibility
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS messages (
+            id SERIAL PRIMARY KEY,
+            content TEXT NOT NULL
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+if __name__ == "__main__":
+    init_db()
+    print("Database initialized successfully.")
