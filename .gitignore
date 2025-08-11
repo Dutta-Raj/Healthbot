@@ -1,4 +1,0 @@
-.env           # Hide your API keys and environment variables
-__pycache__/   # Hide Python cache files
-*.pyc          # Hide compiled Python bytecode files
-chatbot.db     # Hide your database file
