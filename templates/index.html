@@ -2,47 +2,44 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>User Management</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome</title>
     <style>
-        body { font-family: sans-serif; margin: 2em; }
-        form { margin-bottom: 2em; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 20px 0;
+        }
+        main {
+            padding: 20px;
+        }
+        footer {
+            background-color: #333;
+            color: white;
+            padding: 10px 0;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
-    <h1>User Management System</h1>
-    
-    <h2>Add a New User</h2>
-    <form method="POST" action="/">
-        <label for="username">Username:</label>
-        <input type="text" id="username" name="username" required>
-        <br><br>
-        <label for="email">Email:</label>
-        <input type="email" id="email" name="email" required>
-        <br><br>
-        <button type="submit">Add User</button>
-    </form>
-    
-    <h2>Existing Users</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Username</th>
-                <th>Email</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for user in users %}
-            <tr>
-                <td>{{ user.id }}</td>
-                <td>{{ user.username }}</td>
-                <td>{{ user.email }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <header>
+        <h1>Welcome to My Flask App</h1>
+    </header>
+    <main>
+        <p>This is the home page served from <strong>templates/index.html</strong>.</p>
+        <p>If you see this on Railway, your deployment works! 🎉</p>
+    </main>
+    <footer>
+        &copy; 2025 My Flask App
+    </footer>
 </body>
 </html>
