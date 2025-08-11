@@ -7,7 +7,6 @@ app = Flask(__name__)
 
 # --- Database Configuration ---
 # Use an environment variable for the database path
-# or default to 'site.db' in the current directory
 db_path = os.environ.get("DATABASE_URL", "sqlite:///site.db")
 app.config['SQLALCHEMY_DATABASE_URI'] = db_path
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
