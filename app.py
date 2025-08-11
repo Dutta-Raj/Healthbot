@@ -1,11 +1,29 @@
 from flask import Flask, request, jsonify, render_template_string
+from database import db, User, ChatHistory
 import google.generativeai as genai
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env (local only)
+load_dotenv()
 
 app = Flask(__name__)
 
-genai.configure(api_key="AIzaSyC-0i3sof8_6HMTmiv9Xtx3I-Oa6rDasXc")
-model = genai.GenerativeModel(model_name="gemini-2.0-flash")
+# Database config (SQLite)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", "sqlite:///chatbot.db")
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
 
+# Ensure DB tables exist
+with app.app_context():
+    db.create_all()
+
+# Configure Gemini API
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY not set in environment variables.")
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel(model_name="gemini-2.0-flash")
 
 @app.route("/")
 def index():
@@ -13,7 +31,7 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Gemini AI Chatbot</title>
+        <title>Gemini AI Health Chatbot</title>
         <style>
             body {
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -25,9 +43,7 @@ def index():
                 height: 100vh;
                 margin: 0;
             }
-            h2 {
-                color: #333;
-            }
+            h2 { color: #333; }
             #chat-box {
                 width: 90%;
                 max-width: 600px;
@@ -61,13 +77,11 @@ def index():
                 cursor: pointer;
                 font-size: 16px;
             }
-            button:hover {
-                background-color: #0056b3;
-            }
+            button:hover { background-color: #0056b3; }
         </style>
     </head>
     <body>
-        <h2>🤖 Chat with Gemini</h2>
+        <h2>🤖 Gemini Health Chatbot</h2>
         <div id="chat-box"></div>
         <form id="chat-form">
             <input type="text" id="message" placeholder="Type your message..." autocomplete="off" required />
@@ -77,6 +91,12 @@ def index():
             const form = document.getElementById('chat-form');
             const chatBox = document.getElementById('chat-box');
             const messageInput = document.getElementById('message');
+
+            async function loadHistory() {
+                const res = await fetch("/history");
+                const data = await res.json();
+                data.forEach(msg => appendMessage(msg.sender, msg.message));
+            }
 
             form.onsubmit = async (e) => {
                 e.preventDefault();
@@ -104,6 +124,8 @@ def index():
                 chatBox.appendChild(div);
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
+
+            loadHistory();
         </script>
     </body>
     </html>
@@ -115,10 +137,35 @@ def chat():
     user_input = data.get("message", "")
 
     try:
+        # Save user message
+        user = User.query.first()
+        if not user:
+            user = User(username="default_user")
+            db.session.add(user)
+            db.session.commit()
+
+        db.session.add(ChatHistory(user_id=user.id, message=user_input, sender="user"))
+
+        # Get Gemini response
         response = model.generate_content(user_input)
-        return jsonify({"reply": response.text.strip()})
+        bot_reply = response.text.strip()
+
+        # Save bot message
+        db.session.add(ChatHistory(user_id=user.id, message=bot_reply, sender="bot"))
+        db.session.commit()
+
+        return jsonify({"reply": bot_reply})
     except Exception as e:
         return jsonify({"error": f"❌ {str(e)}"}), 500
 
+@app.route("/history")
+def history():
+    user = User.query.first()
+    if not user:
+        return jsonify([])
+    messages = ChatHistory.query.filter_by(user_id=user.id).order_by(ChatHistory.timestamp).all()
+    return jsonify([{"sender": msg.sender, "message": msg.message} for msg in messages])
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
