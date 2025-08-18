@@ -1,6 +1,13 @@
 ---
-title: 🤖 AI Chatbot
-# AI Health-Chatbot
+title: AI Chatbot
+emoji: 🤖
+colorFrom: indigo
+colorTo: pink
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
+# AI Chatbot
 
 A Flask-based chatbot using OpenAI API, deployed with Docker on Hugging Face Spaces.
-<img width="1046" height="811" alt="image" src="https://github.com/user-attachments/assets/6890b1dc-f30f-4186-8036-0382cda6d8f0" />
