@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request, jsonify, Response
 import google.generativeai as genai
 
 app = Flask(__name__)
@@ -197,7 +197,7 @@ HTML_TEMPLATE = """
     
     #mic-btn {
       width: 50px;
-      height: 50px;
+      height: 50%;
       border-radius: 50%;
       background: var(--danger);
       color: white;
@@ -298,9 +298,23 @@ HTML_TEMPLATE = """
           signal: controller.signal
         });
         
-        const data = await res.json();
         removeTyping(typingId);
-        addMessage(data.reply, "bot-message");
+        const botDiv = document.createElement("div");
+        botDiv.classList.add("message", "bot-message");
+        chat.appendChild(botDiv);
+        chat.scrollTop = chat.scrollHeight;
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let partial = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          partial += decoder.decode(value, { stream: true });
+          botDiv.innerHTML = partial;
+          chat.scrollTop = chat.scrollHeight;
+        }
       } catch (error) {
         if (error.name !== 'AbortError') {
           removeTyping(typingId);
@@ -407,12 +421,16 @@ def home():
 @app.route("/chat", methods=["POST"])
 def chat():
     user_msg = request.json.get("message")
-    try:
-        response = model.generate_content(user_msg)
-        bot_reply = response.text + "\n\n⚠️ Note: I am not a doctor. Please consult a healthcare professional for serious concerns."
-    except Exception as e:
-        bot_reply = f"⚠️ Error: {str(e)}"
-    return jsonify({"reply": bot_reply})
+    def generate():
+        try:
+            response = model.generate_content(user_msg, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+            yield "⚠️ Note: I am not a doctor. Please consult a healthcare professional for serious concerns."
+        except Exception as e:
+            yield f"⚠️ Error: {str(e)}"
+    return Response(generate(), mimetype="text/plain")
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
