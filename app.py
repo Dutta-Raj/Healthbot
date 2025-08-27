@@ -1,12 +1,45 @@
 import os
 from flask import Flask, render_template_string, request, jsonify, Response
 import google.generativeai as genai
+from pymongo import MongoClient
+from bson import ObjectId
+import json
+from datetime import datetime
 
 app = Flask(__name__)
 
 api_key = os.getenv("Generative Language API Key", "")
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
+
+# 🟢 MongoDB Atlas connection with your actual URL
+try:  
+    connection_string = f"mongodb+srv://{db_username}:{db_password}@cluster0.qs43zoc.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+    client = MongoClient(connection_string)
+    
+    # Test the connection
+    client.admin.command('ping')
+    print("✅ MongoDB connection successful!")
+    
+    db = client["healthq_db"]
+    chats_collection = db["conversations"]
+    
+except Exception as e:
+    print(f"❌ MongoDB connection failed: {e}")
+    # Fallback to in-memory storage if MongoDB fails
+    chats_collection = None
+    print("Using in-memory storage instead")
+
+# Custom JSON encoder to handle ObjectId
+class JSONEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ObjectId):
+            return str(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        return json.JSONEncoder.default(self, o)
+
+app.json_encoder = JSONEncoder
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -40,6 +73,8 @@ HTML_TEMPLATE = """
       min-height: 100vh;
       padding: 20px;
       color: var(--text);
+      display: flex;
+      gap: 20px;
     }
     
     @keyframes gradient {
@@ -47,8 +82,79 @@ HTML_TEMPLATE = """
       50% { background-position: 100% 50%; }
       100% { background-position: 0% 50%; }
     }
+
+    /* 🟢 Sidebar - Made more visible */
+    #sidebar {
+      width: 250px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      height: 90vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      border: 2px solid var(--primary);
+    }
+
+    #sidebar h3 {
+      text-align: center;
+      margin-bottom: 15px;
+      color: var(--primary);
+    }
+
+    #sidebar button {
+      padding: 12px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 15px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    #sidebar button:hover { 
+      background: #5a52e0; 
+      transform: translateY(-2px);
+    }
+
+    #sidebar ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      flex: 1;
+    }
+
+    #sidebar li {
+      padding: 12px;
+      margin: 8px 0;
+      background: #f8f9fa;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: all 0.2s;
+      border-left: 3px solid transparent;
+    }
+
+    #sidebar li:hover { 
+      background: #e9ecef; 
+      border-left: 3px solid var(--primary);
+    }
     
+    #sidebar li.active {
+      background: var(--primary);
+      color: white;
+      border-left: 3px solid var(--secondary);
+    }
+
+    /* 🟢 Chat Container */
     .container {
+      flex: 1;
       max-width: 800px;
       margin: 0 auto;
       backdrop-filter: blur(10px);
@@ -57,6 +163,8 @@ HTML_TEMPLATE = """
       box-shadow: 0 8px 32px rgba(31, 38, 135, 0.3);
       border: 1px solid rgba(255, 255, 255, 0.18);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
     
     h1 {
@@ -68,6 +176,7 @@ HTML_TEMPLATE = """
     }
     
     #chat {
+      flex: 1;
       height: 500px;
       padding: 20px;
       overflow-y: auto;
@@ -197,7 +306,7 @@ HTML_TEMPLATE = """
     
     #mic-btn {
       width: 50px;
-      height: 50%;
+      height: 50px;
       border-radius: 50%;
       background: var(--danger);
       color: white;
@@ -205,6 +314,9 @@ HTML_TEMPLATE = """
       margin-left: 10px;
       border: none;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     
     #mic-btn.listening {
@@ -219,34 +331,33 @@ HTML_TEMPLATE = """
     
     /* Mobile responsiveness */
     @media (max-width: 600px) {
-      .container {
-        border-radius: 0;
-        min-height: 100vh;
-      }
-      
-      #chat {
-        height: calc(100vh - 150px);
-      }
-      
-      .input-area {
-        flex-direction: column;
-        gap: 10px;
-      }
-      
-      #send-btn, #mic-btn {
-        width: 100%;
-        margin-left: 0;
-        margin-top: 10px;
-      }
+      body { flex-direction: column; }
+      #sidebar { width: 100%; height: auto; margin-bottom: 20px; }
+      .container { border-radius: 0; min-height: 100vh; }
+      #chat { height: calc(100vh - 150px); }
+      .input-area { flex-direction: column; gap: 10px; }
+      #send-btn, #mic-btn { width: 100%; margin-left: 0; margin-top: 10px; }
     }
   </style>
 </head>
 <body>
+  <!-- 🟢 Sidebar - Now clearly visible -->
+  <div id="sidebar">
+    <h3>Chat History</h3>
+    <button onclick="startNewChat()">➕ New Chat</button>
+    <ul id="sessionList">
+      <li class="active" onclick="loadCurrentChat()">💬 Current Chat</li>
+    </ul>
+  </div>
+
+  <!-- 🟢 Main Chat -->
   <div class="container">
     <h1>🤖 HealthQ AI Assistant</h1>
-    
-    <div id="chat"></div>
-    
+    <div id="chat">
+      <div class="message bot-message">
+        Hi there! How can I help you today? 🌤 Note: I am not a doctor. Please consult a healthcare professional for serious concerns.
+      </div>
+    </div>
     <div class="input-area">
       <input id="userInput" type="text" placeholder="Ask a health question..." autocomplete="off"/>
       <button id="send-btn" onclick="handleSend()">
@@ -266,6 +377,7 @@ HTML_TEMPLATE = """
     const sendBtn = document.getElementById("send-btn");
     let controller = null;
     let isGenerating = false;
+    let currentSessionId = null;
     
     async function handleSend() {
       if (isGenerating) {
@@ -280,11 +392,9 @@ HTML_TEMPLATE = """
       if (!userText) userText = input.value.trim();
       if (!userText) return;
       
-      // Display user message
       addMessage(userText, "user-message");
       input.value = "";
       
-      // Show typing indicator
       const typingId = showTyping();
       toggleSendButton(true);
       isGenerating = true;
@@ -294,7 +404,7 @@ HTML_TEMPLATE = """
         const res = await fetch("/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userText }),
+          body: JSON.stringify({ message: userText, session_id: currentSessionId }),
           signal: controller.signal
         });
         
@@ -315,6 +425,9 @@ HTML_TEMPLATE = """
           botDiv.innerHTML = partial;
           chat.scrollTop = chat.scrollHeight;
         }
+        
+        // Refresh chat history after new message
+        await loadChatHistory();
       } catch (error) {
         if (error.name !== 'AbortError') {
           removeTyping(typingId);
@@ -328,13 +441,9 @@ HTML_TEMPLATE = """
     }
     
     function stopGeneration() {
-      if (controller) {
-        controller.abort();
-      }
+      if (controller) controller.abort();
       toggleSendButton(false);
       isGenerating = false;
-      
-      // Remove any active typing indicators
       document.querySelectorAll('[id^="typing-"]').forEach(el => el.remove());
     }
     
@@ -375,40 +484,89 @@ HTML_TEMPLATE = """
     // Voice recognition
     function startListening() {
       const micBtn = document.getElementById("mic-btn");
-      
       if (!('webkitSpeechRecognition' in window)) {
         alert("Speech recognition requires Chrome browser.");
         return;
       }
-      
       const recognition = new webkitSpeechRecognition();
       recognition.lang = "en-US";
       recognition.interimResults = false;
-      
       micBtn.classList.add("listening");
-      
       recognition.start();
-      
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         document.getElementById("userInput").value = transcript;
       };
-      
-      recognition.onerror = (event) => {
-        console.error("Speech error:", event.error);
-      };
-      
-      recognition.onend = () => {
-        micBtn.classList.remove("listening");
-      };
+      recognition.onerror = (event) => { console.error("Speech error:", event.error); };
+      recognition.onend = () => { micBtn.classList.remove("listening"); };
     }
     
-    // Allow Enter key to send message
     document.getElementById("userInput").addEventListener("keypress", (e) => {
-      if (e.key === "Enter" && !isGenerating) {
-        handleSend();
-      }
+      if (e.key === "Enter" && !isGenerating) handleSend();
     });
+
+    // 🟢 Load chat history
+    async function loadChatHistory() {
+      try {
+        const res = await fetch("/history");
+        const data = await res.json();
+        const list = document.getElementById("sessionList");
+        
+        // Keep the "Current Chat" item
+        const currentChatItem = list.querySelector('li:first-child');
+        list.innerHTML = '';
+        list.appendChild(currentChatItem);
+        
+        // Add history items
+        data.forEach((chatItem, idx) => {
+          const li = document.createElement("li");
+          const preview = chatItem.user ? (chatItem.user.substring(0, 20) + (chatItem.user.length > 20 ? "..." : "")) : "Chat " + (idx+1);
+          li.textContent = "💬 " + preview;
+          li.onclick = () => loadHistory(chatItem);
+          list.appendChild(li);
+        });
+      } catch (error) {
+        console.error("Error loading chat history:", error);
+      }
+    }
+
+    function loadHistory(chatItem) {
+      chat.innerHTML = "";
+      if (chatItem.user) {
+        addMessage(chatItem.user, "user-message");
+      }
+      if (chatItem.bot) {
+        addMessage(chatItem.bot.replace(/\\n/g, "<br>"), "bot-message");
+      }
+      currentSessionId = chatItem._id;
+      
+      // Update active state
+      document.querySelectorAll("#sessionList li").forEach(item => {
+        item.classList.remove("active");
+      });
+      event.target.classList.add("active");
+    }
+
+    function loadCurrentChat() {
+      chat.innerHTML = "";
+      addMessage("Hi there! How can I help you today? 🌤 Note: I am not a doctor. Please consult a healthcare professional for serious concerns.", "bot-message");
+      currentSessionId = null;
+      
+      // Update active state
+      document.querySelectorAll("#sessionList li").forEach(item => {
+        item.classList.remove("active");
+      });
+      document.querySelector("#sessionList li:first-child").classList.add("active");
+    }
+
+    function startNewChat() {
+      loadCurrentChat();
+    }
+
+    // 🟢 Fetch chat history when page loads
+    window.onload = function() {
+      loadChatHistory();
+    };
   </script>
 </body>
 </html>
@@ -421,16 +579,60 @@ def home():
 @app.route("/chat", methods=["POST"])
 def chat():
     user_msg = request.json.get("message")
+    session_id = request.json.get("session_id")
+
     def generate():
         try:
+            response_text = ""
             response = model.generate_content(user_msg, stream=True)
+
             for chunk in response:
                 if chunk.text:
+                    response_text += chunk.text
                     yield chunk.text
-            yield "⚠️ Note: I am not a doctor. Please consult a healthcare professional for serious concerns."
+
+            disclaimer = "\n\n⚠️ Note: I am not a doctor. Please consult a healthcare professional for serious concerns."
+            response_text += disclaimer
+            yield disclaimer
+
+            # Save to database if MongoDB is available
+            if chats_collection is not None:
+                chat_data = {
+                    "user": user_msg,
+                    "bot": response_text,
+                    "timestamp": datetime.now()
+                }
+                
+                if session_id:
+                    # Update existing conversation
+                    chats_collection.update_one(
+                        {"_id": ObjectId(session_id)},
+                        {"$set": chat_data}
+                    )
+                else:
+                    # Create new conversation
+                    result = chats_collection.insert_one(chat_data)
+                    # Return the new session ID
+                    return str(result.inserted_id)
+            else:
+                print("MongoDB not available - using in-memory storage")
+
         except Exception as e:
             yield f"⚠️ Error: {str(e)}"
+
     return Response(generate(), mimetype="text/plain")
+
+@app.route("/history", methods=["GET"])
+def history():
+    try:
+        if chats_collection is not None:
+            chats = list(chats_collection.find().sort("timestamp", -1).limit(10))
+            return jsonify(chats)
+        else:
+            return jsonify([])
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return jsonify([])
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
