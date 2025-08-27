@@ -1,16 +1,20 @@
 🤖 HealthQ - AI Health Assistant
 
-An AI-powered health chatbot built with Flask + Gemini API.
-Provides basic health information with a modern chat UI, voice input, and mobile-friendly design.
+HealthQ is an AI-powered health assistant built using Flask, Google Gemini API, and MongoDB Atlas.
+It allows users to chat with an AI, get conversational health insights (⚠️ not medical advice), and keeps a chat history with session management.
 
-🚀 Features
+✨ Features
 
-🧠 Gemini AI-powered responses
+💬 Interactive AI Chat using Google Gemini (gemini-1.5-flash)
 
-🎤 Voice input (speech-to-text)
+📜 Chat History stored in MongoDB Atlas (with fallback to in-memory if DB unavailable)
 
-🎨 Modern responsive UI
+➕ New Chat sessions with session switching in the sidebar
 
-⏹️ Stop AI response while generating
+🎤 Voice Input (Speech-to-Text) for asking questions via microphone
 
-⚠️ Disclaimer: Not a replacement for doctors
+🖥 Beautiful UI with animated gradient background and responsive design
+
+📌 Streaming Responses for real-time typing effect
+
+⚠️ Disclaimer Reminder – Not a replacement for medical professionals
