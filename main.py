@@ -3,13 +3,14 @@ import time
 import json
 import jwt
 import bcrypt
+import requests
+import random
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, render_template_string, request, jsonify, Response
 from functools import wraps
 from pymongo import MongoClient, errors
 from bson import ObjectId
-import google.generativeai as genai
 import certifi
 
 # Load environment variables from .env file
@@ -22,7 +23,7 @@ app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 MONGO_USERNAME = os.getenv("MONGO_USERNAME")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
 MONGO_CLUSTER = os.getenv("MONGO_CLUSTER")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyBfq-N5ML_HDJwVuuGuUXCvS-gVp4esJr0")
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN", "")
 JWT_SECRET = os.getenv("JWT_SECRET", "your-jwt-secret-change-in-production")
 
 MONGO_URI = f"mongodb+srv://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_CLUSTER}/?retryWrites=true&w=majority"
@@ -30,7 +31,7 @@ MONGO_URI = f"mongodb+srv://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_CLUSTER}/?r
 # --- Database & AI Initialization ---
 chats_collection = None
 users_collection = None
-model = None
+ai_available = False
 
 # MongoDB Setup
 try:
@@ -45,14 +46,178 @@ except Exception as e:
     chats_collection = None
     users_collection = None
 
-# Gemini AI Setup
+# Hugging Face API Setup with READ permissions
 try:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    print("✅ Gemini initialized successfully.")
+    if HUGGINGFACE_TOKEN and HUGGINGFACE_TOKEN != "your-huggingface-token-here":
+        # Test the token with a simple public API call
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+        test_response = requests.get(
+            "https://huggingface.co/api/whoami-v2",
+            headers=headers,
+            timeout=10
+        )
+        if test_response.status_code == 200:
+            user_info = test_response.json()
+            ai_available = True
+            print(f"✅ Hugging Face API connected successfully. Welcome {user_info.get('name', 'User')}!")
+            print(f"✅ Token has READ permissions - perfect for inference!")
+        else:
+            print(f"❌ Hugging Face API test failed: {test_response.status_code}")
+            print("Using smart local responses instead.")
+            ai_available = False
+    else:
+        print("❌ Hugging Face token not found in environment variables")
+        ai_available = False
 except Exception as e:
-    print(f"❌ Gemini initialization failed: {e}")
-    model = None
+    print(f"❌ Hugging Face initialization failed: {e}")
+    print("Using smart local responses instead.")
+    ai_available = False
+
+# Enhanced health knowledge base
+HEALTH_KNOWLEDGE = {
+    "greetings": [
+        "Hello! I'm HealthQ, your AI health assistant. I'm here to provide general health information and wellness tips. How can I help you today? 😊",
+        "Hi there! I'm HealthQ, ready to discuss health and wellness topics. What would you like to know?",
+        "Welcome! I'm HealthQ, your health assistant. I can help with fitness, nutrition, mental wellness, and general health questions. What's on your mind?"
+    ],
+    
+    "symptoms": {
+        "headache": "Headaches can have many causes including stress, dehydration, or tension. Try resting in a quiet room, staying hydrated, and applying a cool compress. If headaches persist or are severe, consult a doctor.",
+        "fever": "Fever is often a sign your body is fighting infection. Rest, stay hydrated, and monitor your temperature. If fever is high (above 102°F/39°C) or lasts more than 3 days, see a doctor.",
+        "cough": "For coughs, stay hydrated, use a humidifier, and try honey in warm water. If cough persists beyond 2 weeks or is accompanied by breathing difficulties, seek medical attention.",
+        "fatigue": "Fatigue can result from poor sleep, stress, or nutritional deficiencies. Ensure you're getting 7-9 hours of sleep, eating balanced meals, and managing stress.",
+        "stomach_pain": "For mild stomach discomfort, try the BRAT diet (bananas, rice, applesauce, toast) and stay hydrated. If pain is severe or persistent, consult a healthcare provider."
+    },
+    
+    "nutrition": [
+        "A balanced diet includes fruits, vegetables, whole grains, lean proteins, and healthy fats. Aim for variety and colorful plates!",
+        "Stay hydrated by drinking plenty of water throughout the day. Most adults need about 8-10 cups (2-2.5 liters) daily.",
+        "Limit processed foods, added sugars, and excessive salt. Focus on whole, nutrient-dense foods for optimal health.",
+        "Include fiber-rich foods like fruits, vegetables, and whole grains to support digestive health.",
+        "Don't skip breakfast! A balanced morning meal can help maintain energy levels throughout the day."
+    ],
+    
+    "fitness": [
+        "Aim for at least 150 minutes of moderate exercise or 75 minutes of vigorous exercise per week.",
+        "Include both cardio (walking, running, swimming) and strength training exercises in your routine.",
+        "Remember to warm up before exercise and cool down afterward to prevent injuries.",
+        "Find activities you enjoy - you're more likely to stick with exercise you find fun!",
+        "Even short bursts of activity throughout the day can contribute to your fitness goals."
+    ]
+}
+
+def get_smart_local_response(user_message):
+    """Generate intelligent health responses based on user input"""
+    user_msg_lower = user_message.lower().strip()
+    
+    # Greetings
+    if any(word in user_msg_lower for word in ['hello', 'hi', 'hey', 'greetings', 'good morning', 'good afternoon']):
+        return random.choice(HEALTH_KNOWLEDGE["greetings"])
+    
+    # Specific symptoms
+    if 'headache' in user_msg_lower:
+        return HEALTH_KNOWLEDGE["symptoms"]["headache"] + "\n\n⚠️ If headaches are severe or persistent, please consult a doctor."
+    
+    if 'fever' in user_msg_lower:
+        return HEALTH_KNOWLEDGE["symptoms"]["fever"] + "\n\n🌡️ Monitor your temperature and seek medical care if concerned."
+    
+    if 'cough' in user_msg_lower:
+        return HEALTH_KNOWLEDGE["symptoms"]["cough"] + "\n\n🤧 Persistent coughs should be evaluated by a healthcare provider."
+    
+    if any(word in user_msg_lower for word in ['tired', 'fatigue', 'exhausted', 'low energy']):
+        return HEALTH_KNOWLEDGE["symptoms"]["fatigue"] + "\n\n💤 Quality sleep and proper nutrition can help combat fatigue."
+    
+    # Nutrition topics
+    if any(word in user_msg_lower for word in ['diet', 'nutrition', 'food', 'eat', 'meal', 'weight']):
+        response = random.choice(HEALTH_KNOWLEDGE["nutrition"])
+        return f"{response}\n\n🍎 Remember: A registered dietitian can provide personalized nutrition advice."
+    
+    # Fitness topics
+    if any(word in user_msg_lower for word in ['exercise', 'workout', 'fitness', 'gym', 'run', 'walk']):
+        response = random.choice(HEALTH_KNOWLEDGE["fitness"])
+        return f"{response}\n\n🏃‍♂️ Always consult with a doctor before starting new exercise programs."
+    
+    # Mental health topics
+    if any(word in user_msg_lower for word in ['stress', 'anxiety', 'depression', 'mental', 'mood', 'worry']):
+        return "🧠 Mental health is important! Practice stress management, stay connected with loved ones, and don't hesitate to seek professional support if needed. Your wellbeing matters!"
+    
+    # Sleep topics
+    if any(word in user_msg_lower for word in ['sleep', 'insomnia', 'tired', 'rest', 'bedtime']):
+        return "😴 Most adults need 7-9 hours of quality sleep. Create a consistent sleep schedule, make your bedroom comfortable, and avoid screens before bed for better rest."
+    
+    # Hydration
+    if any(word in user_msg_lower for word in ['water', 'hydrate', 'hydration', 'thirsty', 'dehydrated']):
+        return "💧 Staying hydrated is crucial! Aim for 8-10 cups of water daily. You can also get fluids from fruits, vegetables, and herbal teas."
+    
+    # Thank you responses
+    if any(word in user_msg_lower for word in ['thank', 'thanks', 'appreciate']):
+        return "You're welcome! 😊 I'm glad I could help. Remember, I'm here for general health information - always consult healthcare professionals for personal medical advice."
+    
+    # Help
+    if 'help' in user_msg_lower:
+        return "I can help with: \n• Nutrition and diet 🍎\n• Exercise and fitness 🏃‍♂️\n• Mental wellness 🧠\n• Sleep improvement 😴\n• General health information 💊\n\nWhat would you like to know about?"
+    
+    # Default response
+    default_responses = [
+        "I'm here to provide general health information. Could you tell me more about what health topic interests you?",
+        "I specialize in health and wellness topics. Are you asking about nutrition, exercise, mental health, or something else?",
+        "I'd love to help with your health question! Could you provide more details about what you'd like to know?"
+    ]
+    
+    return random.choice(default_responses) + "\n\n💡 Remember: For personal medical advice, please consult a healthcare professional."
+
+def get_huggingface_response(user_message):
+    """Get response from Hugging Face using models with READ permissions"""
+    try:
+        # Using models that work with read permissions
+        API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+        
+        payload = {
+            "inputs": user_message,
+            "parameters": {
+                "max_new_tokens": 100,
+                "temperature": 0.7,
+                "do_sample": True,
+                "return_full_text": False
+            },
+            "options": {
+                "wait_for_model": True,
+                "use_cache": True
+            }
+        }
+        
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                generated_text = result[0].get('generated_text', '').strip()
+                
+                if generated_text and len(generated_text) > 10:
+                    # Add medical disclaimer
+                    return f"{generated_text}\n\n⚠️ Note: I am an AI assistant, not a doctor. Please consult a healthcare professional for medical advice."
+                else:
+                    return get_smart_local_response(user_message)
+            else:
+                return get_smart_local_response(user_message)
+        else:
+            print(f"Hugging Face API error: {response.status_code}")
+            return get_smart_local_response(user_message)
+            
+    except Exception as e:
+        print(f"Error calling Hugging Face API: {e}")
+        return get_smart_local_response(user_message)
+
+def get_ai_response(user_message):
+    """Get the best available response"""
+    if ai_available:
+        try:
+            return get_huggingface_response(user_message)
+        except:
+            return get_smart_local_response(user_message)
+    else:
+        return get_smart_local_response(user_message)
 
 # --- Utility Functions for Validation ---
 def validate_email(email):
@@ -113,7 +278,7 @@ def register():
         if not validate_name(name):
             return jsonify({'error': 'Name must be at least 2 characters long'}), 400
 
-        # Check if user already exists - FIXED: Proper None check
+        # Check if user already exists
         if users_collection is not None:
             existing_user = users_collection.find_one({"email": email})
             if existing_user:
@@ -130,7 +295,6 @@ def register():
             "created_at": datetime.now()
         }
 
-        # FIXED: Proper collection check
         if users_collection is not None:
             result = users_collection.insert_one(user_data)
             user_id = str(result.inserted_id)
@@ -165,7 +329,7 @@ def login():
         if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
 
-        # Find user - FIXED: Proper None check
+        # Find user
         if users_collection is not None:
             user = users_collection.find_one({"email": email})
             if not user:
@@ -203,12 +367,12 @@ def login():
 def health_check():
     """Health check endpoint"""
     db_status = "connected" if users_collection is not None else "disconnected"
-    ai_status = "connected" if model is not None else "disconnected"
     
     return jsonify({
         "status": "healthy",
         "database": db_status,
-        "ai_service": ai_status,
+        "ai_service": "connected" if ai_available else "local_responses",
+        "ai_available": ai_available,
         "timestamp": datetime.now().isoformat()
     })
 
@@ -235,7 +399,86 @@ def debug_db():
             "users_collection": "none"
         })
 
-# --- Your Existing Home Route (Keep your original HTML template) ---
+# --- Chat Route ---
+@app.route("/chat", methods=["POST"])
+@token_required
+def chat(current_user):
+    try:
+        user_msg = request.json.get("message")
+        session_id = request.json.get("session_id")
+
+        if not user_msg:
+            return jsonify({"error": "Message is required"}), 400
+
+        # Get AI response
+        response_text = get_ai_response(user_msg)
+
+        # Save to database if available
+        if chats_collection is not None:
+            try:
+                chat_data = {
+                    "user_id": current_user,
+                    "user": user_msg,
+                    "bot": response_text,
+                    "timestamp": datetime.now(),
+                    "ai_available": ai_available
+                }
+                
+                if session_id:
+                    chats_collection.update_one(
+                        {"_id": ObjectId(session_id), "user_id": current_user},
+                        {"$set": chat_data}
+                    )
+                    result_id = session_id
+                else:
+                    result = chats_collection.insert_one(chat_data)
+                    result_id = str(result.inserted_id)
+                
+                return jsonify({
+                    "response": response_text,
+                    "session_id": result_id
+                })
+            except Exception as db_error:
+                print(f"Database error: {db_error}")
+                return jsonify({
+                    "response": response_text,
+                    "session_id": session_id
+                })
+        else:
+            return jsonify({
+                "response": response_text,
+                "session_id": session_id
+            })
+
+    except Exception as e:
+        print(f"Chat error: {e}")
+        return jsonify({
+            "response": "I apologize, but I'm having trouble responding right now. Please try again later.",
+            "session_id": session_id
+        })
+
+@app.route("/history", methods=["GET"])
+@token_required
+def history(current_user):
+    try:
+        if chats_collection is not None:
+            # Only get chats for this user
+            chats = list(chats_collection.find(
+                {"user_id": current_user}
+            ).sort("timestamp", -1).limit(10))
+            
+            # Convert ObjectId to string for JSON serialization
+            for chat in chats:
+                chat['_id'] = str(chat['_id'])
+                
+            return jsonify(chats)
+        else:
+            return jsonify([])
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        return jsonify([])
+
+# --- Main Route with Complete HTML Template ---
 @app.route("/")
 def home():
     HTML_TEMPLATE = """
@@ -416,7 +659,7 @@ def home():
       .chat-interface {
           display: none;
           width: 100%;
-          max-width: 1200px;
+          max-width: 1400px;
           height: 90vh;
       }
       
@@ -429,12 +672,104 @@ def home():
           padding: 10px 20px;
           border-radius: 25px;
           font-size: 14px;
+          z-index: 1000;
       }
 
       /* Chat Interface Styles */
-      .chat-container {
+      .chat-layout {
+          display: flex;
           width: 100%;
           height: 100%;
+          gap: 20px;
+      }
+      
+      /* Sidebar Styles */
+      .sidebar {
+          width: 300px;
+          background: rgba(255, 255, 255, 0.95);
+          border-radius: 20px;
+          padding: 20px;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          display: flex;
+          flex-direction: column;
+      }
+      
+      .sidebar-header {
+          margin-bottom: 20px;
+      }
+      
+      .new-chat-btn {
+          width: 100%;
+          padding: 12px;
+          background: var(--primary);
+          color: white;
+          border: none;
+          border-radius: 12px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          transition: all 0.3s ease;
+          margin-bottom: 20px;
+      }
+      
+      .new-chat-btn:hover {
+          background: #5a52e0;
+          transform: translateY(-2px);
+      }
+      
+      .chat-history {
+          flex: 1;
+          overflow-y: auto;
+      }
+      
+      .chat-history-item {
+          padding: 12px;
+          margin-bottom: 8px;
+          background: #f8f9fa;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          border: 1px solid transparent;
+      }
+      
+      .chat-history-item:hover {
+          background: #e9ecef;
+          border-color: var(--primary);
+      }
+      
+      .chat-history-item.active {
+          background: var(--primary);
+          color: white;
+      }
+      
+      .chat-preview {
+          font-size: 12px;
+          color: #666;
+          margin-top: 4px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+      }
+      
+      .chat-history-item.active .chat-preview {
+          color: rgba(255,255,255,0.8);
+      }
+      
+      .chat-date {
+          font-size: 10px;
+          color: #999;
+          margin-top: 4px;
+      }
+      
+      .chat-history-item.active .chat-date {
+          color: rgba(255,255,255,0.6);
+      }
+      
+      /* Main Chat Container */
+      .chat-container {
+          flex: 1;
           background: rgba(255, 255, 255, 0.95);
           border-radius: 20px;
           display: flex;
@@ -534,6 +869,52 @@ def home():
           border-color: var(--primary);
       }
       
+      .mic-button {
+          background: #4fd1c5;
+          color: white;
+          border: none;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+          font-size: 18px;
+      }
+      
+      .mic-button:hover {
+          background: #38b2ac;
+          transform: scale(1.05);
+      }
+      
+      .mic-button.recording {
+          background: var(--danger);
+          animation: pulse 1.5s infinite;
+      }
+      
+      .stop-button {
+          background: var(--danger);
+          color: white;
+          border: none;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.3s ease;
+          font-size: 18px;
+          display: none;
+      }
+      
+      .stop-button:hover {
+          background: #e53e3e;
+          transform: scale(1.05);
+      }
+      
       .send-button {
           background: var(--primary);
           color: white;
@@ -581,6 +962,43 @@ def home():
           background: #f1f3f4;
           border-radius: 10px;
           margin-top: 10px;
+      }
+      
+      @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+          100% { transform: scale(1); }
+      }
+      
+      .empty-state {
+          text-align: center;
+          color: #666;
+          padding: 40px 20px;
+      }
+      
+      .empty-state i {
+          font-size: 48px;
+          margin-bottom: 10px;
+          opacity: 0.5;
+      }
+
+      .ai-status {
+          padding: 8px 12px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 500;
+          margin-top: 10px;
+          text-align: center;
+      }
+      
+      .ai-status.connected {
+          background: #c6f6d5;
+          color: #276749;
+      }
+      
+      .ai-status.disconnected {
+          background: #fed7d7;
+          color: #c53030;
       }
       </style>
     </head>
@@ -630,14 +1048,114 @@ def home():
           Welcome! • <a href="#" onclick="handleLogout()" style="color: white; margin-left: 10px;">Logout</a>
         </div>
         
-        <!-- Chat App Container -->
-        <div id="chatAppContainer"></div>
+        <!-- Chat Layout with Sidebar -->
+        <div class="chat-layout">
+          <!-- Sidebar for Chat History -->
+          <div class="sidebar">
+            <div class="sidebar-header">
+              <button class="new-chat-btn" onclick="createNewChat()">
+                ＋ New Chat
+              </button>
+              <div id="aiStatus" class="ai-status disconnected">
+                AI: Connecting...
+              </div>
+            </div>
+            <div class="chat-history" id="chatHistory">
+              <!-- Chat history will be loaded here -->
+            </div>
+          </div>
+          
+          <!-- Main Chat Area -->
+          <div id="chatAppContainer"></div>
+        </div>
       </div>
 
       <script>
         let authToken = null;
         let currentUserId = null;
         let currentUserName = null;
+        let currentSessionId = null;
+        let isRecording = false;
+        let recognition = null;
+        let aiAvailable = false;
+
+        // Check AI status on load
+        async function checkAIStatus() {
+          try {
+            const response = await fetch('/health');
+            const data = await response.json();
+            aiAvailable = data.ai_available;
+            
+            const aiStatus = document.getElementById('aiStatus');
+            if (aiAvailable) {
+              aiStatus.textContent = 'AI: Connected ✓';
+              aiStatus.className = 'ai-status connected';
+            } else {
+              aiStatus.textContent = 'AI: Using Local Mode';
+              aiStatus.className = 'ai-status disconnected';
+            }
+          } catch (error) {
+            console.error('Error checking AI status:', error);
+          }
+        }
+
+        // Initialize speech recognition
+        function initSpeechRecognition() {
+          if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = function() {
+              isRecording = true;
+              updateRecordingUI();
+            };
+
+            recognition.onresult = function(event) {
+              const transcript = event.results[0][0].transcript;
+              document.getElementById('userInput').value = transcript;
+            };
+
+            recognition.onerror = function(event) {
+              console.error('Speech recognition error', event.error);
+              stopRecording();
+            };
+
+            recognition.onend = function() {
+              stopRecording();
+            };
+          } else {
+            console.log('Speech recognition not supported');
+          }
+        }
+
+        function startRecording() {
+          if (recognition) {
+            recognition.start();
+          }
+        }
+
+        function stopRecording() {
+          if (recognition) {
+            recognition.stop();
+            isRecording = false;
+            updateRecordingUI();
+          }
+        }
+
+        function updateRecordingUI() {
+          const micButton = document.getElementById('micButton');
+          const stopButton = document.getElementById('stopButton');
+          
+          if (isRecording) {
+            micButton.style.display = 'none';
+            stopButton.style.display = 'flex';
+          } else {
+            micButton.style.display = 'flex';
+            stopButton.style.display = 'none';
+          }
+        }
 
         // Show auth form function
         function showAuthForm(formType) {
@@ -763,8 +1281,90 @@ def home():
           document.getElementById('userInfo').innerHTML = 
             `Welcome, ${currentUserName}! • <a href="#" onclick="handleLogout()" style="color: white; margin-left: 10px;">Logout</a>`;
           
-          // Load the chat application
+          // Load chat history and initialize chat
+          loadChatHistory();
+          createNewChat();
+          checkAIStatus();
+        }
+
+        // Load chat history
+        async function loadChatHistory() {
+          try {
+            const response = await fetch('/history', {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${authToken}`
+              }
+            });
+
+            if (response.ok) {
+              const chats = await response.json();
+              displayChatHistory(chats);
+            }
+          } catch (error) {
+            console.error('Error loading chat history:', error);
+          }
+        }
+
+        // Display chat history in sidebar
+        function displayChatHistory(chats) {
+          const chatHistory = document.getElementById('chatHistory');
+          
+          if (chats.length === 0) {
+            chatHistory.innerHTML = `
+              <div class="empty-state">
+                <div>💬</div>
+                <p>No previous chats</p>
+                <p style="font-size: 12px; margin-top: 5px;">Start a new conversation!</p>
+              </div>
+            `;
+            return;
+          }
+
+          chatHistory.innerHTML = chats.map(chat => `
+            <div class="chat-history-item ${chat._id === currentSessionId ? 'active' : ''}" 
+                 onclick="loadChat('${chat._id}')">
+              <div style="font-weight: 500;">
+                ${chat.user ? chat.user.substring(0, 30) + (chat.user.length > 30 ? '...' : '') : 'New Chat'}
+              </div>
+              <div class="chat-preview">
+                ${chat.bot ? chat.bot.substring(0, 50) + (chat.bot.length > 50 ? '...' : '') : 'No response yet'}
+              </div>
+              <div class="chat-date">
+                ${new Date(chat.timestamp).toLocaleDateString()} • ${new Date(chat.timestamp).toLocaleTimeString()}
+              </div>
+            </div>
+          `).join('');
+        }
+
+        // Create new chat
+        function createNewChat() {
+          currentSessionId = null;
           loadChatApp();
+          updateActiveChatInSidebar();
+        }
+
+        // Load specific chat
+        function loadChat(chatId) {
+          currentSessionId = chatId;
+          // In a real app, you would fetch the specific chat messages
+          // For now, we'll just update the UI and clear current messages
+          loadChatApp();
+          updateActiveChatInSidebar();
+        }
+
+        // Update active chat in sidebar
+        function updateActiveChatInSidebar() {
+          document.querySelectorAll('.chat-history-item').forEach(item => {
+            item.classList.remove('active');
+          });
+          
+          if (currentSessionId) {
+            const activeItem = document.querySelector(`[onclick="loadChat('${currentSessionId}')"]`);
+            if (activeItem) {
+              activeItem.classList.add('active');
+            }
+          }
         }
 
         // Load the main chat application
@@ -778,7 +1378,8 @@ def home():
                 
                 <div class="chat-messages" id="chatMessages">
                     <div class="message bot-message">
-                        Hello ${currentUserName}! I'm HealthQ, your AI health assistant. How can I help you today? 😊
+                        ${currentSessionId ? 'Continuing previous conversation...' : `Hello ${currentUserName}! I'm HealthQ, your AI health assistant. How can I help you today? 😊`}
+                        ${!aiAvailable ? '<br><br><small>⚠️ Note: Currently using local health knowledge base.</small>' : ''}
                     </div>
                 </div>
                 
@@ -795,6 +1396,12 @@ def home():
                             placeholder="Type your health question here..."
                             maxlength="500"
                         >
+                        <button class="mic-button" id="micButton" onclick="startRecording()">
+                            🎤
+                        </button>
+                        <button class="stop-button" id="stopButton" onclick="stopRecording()">
+                            ⏹️
+                        </button>
                         <button class="send-button" onclick="sendMessage()" id="sendButton">
                             ➤
                         </button>
@@ -805,6 +1412,9 @@ def home():
                 </div>
             </div>
           `;
+
+          // Initialize speech recognition
+          initSpeechRecognition();
 
           // Add event listeners for the new chat interface
           setTimeout(() => {
@@ -855,7 +1465,7 @@ def home():
                     },
                     body: JSON.stringify({
                         message: message,
-                        session_id: window.currentSessionId || null
+                        session_id: currentSessionId
                     })
                 });
                 
@@ -863,33 +1473,21 @@ def home():
                     throw new Error('Network response was not ok');
                 }
                 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let botMessageDiv = document.createElement('div');
-                botMessageDiv.className = 'message bot-message';
-                chatMessages.appendChild(botMessageDiv);
+                const data = await response.json();
                 
                 // Hide typing indicator
                 typingIndicator.style.display = 'none';
                 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    const chunk = decoder.decode(value);
-                    
-                    // Check if it's a session ID script
-                    if (chunk.includes('currentSessionId')) {
-                        const match = chunk.match(/currentSessionId = '([^']+)'/);
-                        if (match) {
-                            window.currentSessionId = match[1];
-                        }
-                        continue;
-                    }
-                    
-                    // Append to bot message
-                    botMessageDiv.textContent += chunk;
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                // Add bot message to chat
+                const botMessageDiv = document.createElement('div');
+                botMessageDiv.className = 'message bot-message';
+                botMessageDiv.textContent = data.response;
+                chatMessages.appendChild(botMessageDiv);
+                
+                // Update session ID if provided
+                if (data.session_id) {
+                    currentSessionId = data.session_id;
+                    loadChatHistory();
                 }
                 
             } catch (error) {
@@ -912,6 +1510,7 @@ def home():
           authToken = null;
           currentUserId = null;
           currentUserName = null;
+          currentSessionId = null;
           document.getElementById('authInterface').style.display = 'block';
           document.getElementById('chatInterface').style.display = 'none';
           hideMessages();
@@ -939,73 +1538,6 @@ def home():
     </html>
     """
     return render_template_string(HTML_TEMPLATE)
-
-# --- Your Existing Chat Routes (Updated with Authentication) ---
-@app.route("/chat", methods=["POST"])
-@token_required
-def chat(current_user):
-    user_msg = request.json.get("message")
-    session_id = request.json.get("session_id")
-
-    if not model:
-        return jsonify({"error": "Gemini AI is not available"}), 500
-
-    def generate():
-        try:
-            response_text = ""
-            response = model.generate_content(user_msg, stream=True)
-
-            for chunk in response:
-                if chunk.text:
-                    response_text += chunk.text
-                    yield chunk.text
-
-            disclaimer = "\n\n⚠️ Note: I am not a doctor. Please consult a healthcare professional for serious concerns."
-            response_text += disclaimer
-            yield disclaimer
-
-            # Save to database if available - NOW WITH USER ID
-            if chats_collection is not None:
-                try:
-                    chat_data = {
-                        "user_id": current_user,
-                        "user": user_msg,
-                        "bot": response_text,
-                        "timestamp": datetime.now()
-                    }
-                    
-                    if session_id:
-                        chats_collection.update_one(
-                            {"_id": ObjectId(session_id), "user_id": current_user},
-                            {"$set": chat_data}
-                        )
-                    else:
-                        result = chats_collection.insert_one(chat_data)
-                        yield f"<script>currentSessionId = '{result.inserted_id}';</script>"
-                except Exception as db_error:
-                    print(f"Database error: {db_error}")
-                    yield ""
-
-        except Exception as e:
-            yield f"⚠️ Error: {str(e)}"
-
-    return Response(generate(), mimetype="text/plain")
-
-@app.route("/history", methods=["GET"])
-@token_required
-def history(current_user):
-    try:
-        if chats_collection is not None:
-            # NEW: Only get chats for this user
-            chats = list(chats_collection.find(
-                {"user_id": current_user}
-            ).sort("timestamp", -1).limit(10))
-            return jsonify(chats)
-        else:
-            return jsonify([])
-    except Exception as e:
-        print(f"Error fetching history: {e}")
-        return jsonify([])
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
