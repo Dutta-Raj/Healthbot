@@ -23,7 +23,13 @@ app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 MONGO_USERNAME = os.getenv("MONGO_USERNAME")
 MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
 MONGO_CLUSTER = os.getenv("MONGO_CLUSTER")
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN", "")
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+
+# 2. Immediately check if the token was loaded.
+if not HUGGINGFACE_TOKEN:
+    # Raise an error if the environment variable is not set. 
+    # This prevents deployment failures and keeps the secret out of source code.
+    raise ValueError("HUGGINGFACE_TOKEN environment variable not set. Please set it in your local .env file or your Render environment variables.")
 JWT_SECRET = os.getenv("JWT_SECRET", "your-jwt-secret-change-in-production")
 
 MONGO_URI = f"mongodb+srv://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_CLUSTER}/?retryWrites=true&w=majority"
