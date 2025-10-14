@@ -1,5 +1,4 @@
-This file forces the environment to use a stable Python version (like 3.11)
-to avoid C compilation errors with packages like Pandas.
-The Python runtime version to use for the build step
+Pinning to a highly stable Python 3.10 version to ensure C extensions compile cleanly
+and resolve the "ninja: build stopped" error.
 build:
-python_version: 3.11.8
+python_version: 3.10.14
