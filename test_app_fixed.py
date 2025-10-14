@@ -1,4 +1,4 @@
-# test_main.py
+# test_app_fixed.py
 import pytest
 import json
 import bcrypt
@@ -8,10 +8,11 @@ from unittest.mock import patch, MagicMock
 import sys
 import os
 
-# Add current directory to path to import main.py
+# Add current directory to path to import app.py
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from main import app, validate_email, validate_password, validate_name
+# Import from app instead of main
+from app import app, validate_email, validate_password, validate_name
 
 @pytest.fixture
 def client():
@@ -57,13 +58,16 @@ def test_home_route(client):
 
 def test_debug_db_no_connection(client):
     """Test debug endpoint when no database connection"""
-    with patch('main.users_collection', None):
+    # Patch the correct module - app instead of main
+    with patch('app.users_collection', None):
         response = client.get('/debug-db')
         assert response.status_code == 200
         assert response.json['database_status'] == 'not_connected'
 
 # --- Authentication Tests ---
-@patch('main.users_collection')
+
+# All patches updated to use 'app' instead of 'main'
+@patch('app.users_collection')
 def test_register_missing_fields(mock_users, client):
     """Test registration with missing fields"""
     response = client.post('/register', json={
@@ -73,7 +77,7 @@ def test_register_missing_fields(mock_users, client):
     assert response.status_code == 400
     assert 'required' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_register_invalid_email(mock_users, client):
     """Test registration with invalid email"""
     mock_users.find_one.return_value = None
@@ -86,7 +90,7 @@ def test_register_invalid_email(mock_users, client):
     assert response.status_code == 400
     assert 'invalid email' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_register_weak_password(mock_users, client):
     """Test registration with weak password"""
     mock_users.find_one.return_value = None
@@ -99,7 +103,7 @@ def test_register_weak_password(mock_users, client):
     assert response.status_code == 400
     assert 'password' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_register_existing_user(mock_users, client):
     """Test registration with existing email"""
     mock_users.find_one.return_value = {'email': 'test@example.com'}
@@ -112,7 +116,7 @@ def test_register_existing_user(mock_users, client):
     assert response.status_code == 400
     assert 'already exists' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_register_success(mock_users, client):
     """Test successful user registration"""
     mock_users.find_one.return_value = None
@@ -128,14 +132,14 @@ def test_register_success(mock_users, client):
     assert 'successfully' in response.json['message'].lower()
     assert 'token' in response.json
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_login_missing_credentials(mock_users, client):
     """Test login with missing credentials"""
     response = client.post('/login', json={})
     assert response.status_code == 400
     assert 'required' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_login_user_not_found(mock_users, client):
     """Test login with non-existent user"""
     mock_users.find_one.return_value = None
@@ -147,7 +151,7 @@ def test_login_user_not_found(mock_users, client):
     assert response.status_code == 401
     assert 'invalid' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_login_wrong_password(mock_users, client):
     """Test login with wrong password"""
     hashed_password = bcrypt.hashpw(b'correctpassword', bcrypt.gensalt())
@@ -165,7 +169,7 @@ def test_login_wrong_password(mock_users, client):
     assert response.status_code == 401
     assert 'invalid' in response.json['error'].lower()
 
-@patch('main.users_collection')
+@patch('app.users_collection')
 def test_login_success(mock_users, client):
     """Test successful login"""
     correct_password = 'password123'
