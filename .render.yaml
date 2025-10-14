@@ -1,0 +1,5 @@
+This file forces the environment to use a stable Python version (like 3.11)
+to avoid C compilation errors with packages like Pandas.
+The Python runtime version to use for the build step
+build:
+python_version: 3.11.8
