@@ -13,7 +13,7 @@ from pymongo import MongoClient, errors
 from bson import ObjectId
 import certifi
 
-# Load environment variables from .env file
+# Load environment variables from .env-file
 load_dotenv()
 
 app = Flask(__name__)
