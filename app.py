@@ -1,3 +1,5 @@
+from kafka_service import kafka_service
+from health_alerts import alert_manager
 import os
 import time
 import json
@@ -13,7 +15,7 @@ from pymongo import MongoClient, errors
 from bson import ObjectId
 import certifi
 
-# Load environment variables from .env-file
+# Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
@@ -412,6 +414,11 @@ def chat(current_user):
         # Get AI response
         response_text = get_ai_response(user_msg)
 
+        # 🔥 NEW: Analyze for critical health alerts
+        alert_data = alert_manager.analyze_message_for_alerts(
+            current_user, user_msg, response_text
+        )
+
         # Save to database if available
         if chats_collection is not None:
             try:
@@ -420,7 +427,8 @@ def chat(current_user):
                     "user": user_msg,
                     "bot": response_text,
                     "timestamp": datetime.now(),
-                    "ai_available": ai_available
+                    "ai_available": ai_available,
+                    "alert_triggered": alert_data is not None  # NEW FIELD
                 }
                 
                 if session_id:
@@ -435,27 +443,30 @@ def chat(current_user):
                 
                 return jsonify({
                     "response": response_text,
-                    "session_id": result_id
+                    "session_id": result_id,
+                    "alert_triggered": alert_data is not None  # NEW RESPONSE FIELD
                 })
             except Exception as db_error:
                 print(f"Database error: {db_error}")
                 return jsonify({
                     "response": response_text,
-                    "session_id": session_id
+                    "session_id": session_id,
+                    "alert_triggered": alert_data is not None
                 })
         else:
             return jsonify({
                 "response": response_text,
-                "session_id": session_id
+                "session_id": session_id,
+                "alert_triggered": alert_data is not None
             })
 
     except Exception as e:
         print(f"Chat error: {e}")
         return jsonify({
             "response": "I apologize, but I'm having trouble responding right now. Please try again later.",
-            "session_id": session_id
+            "session_id": session_id,
+            "alert_triggered": False
         })
-
 @app.route("/history", methods=["GET"])
 @token_required
 def history(current_user):
