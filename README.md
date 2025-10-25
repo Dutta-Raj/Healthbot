@@ -15,3 +15,4 @@ HealthQ is an AI-powered health assistant built using Flask, Hugging Face API, a
 🔐 User Authentication - Secure login/register system
 
 ⚠️ Medical Disclaimers - Always reminds to consult healthcare professionals
+    Using Kafka for emergeny alerts
