@@ -1,18 +1,19 @@
-🤖 HealthQ - AI Health Assistant
-HealthQ is an AI-powered health assistant built using Flask, Hugging Face API, and MongoDB. It provides intelligent health conversations with proper medical disclaimers.
+🤖 HealthBot - AI Health Assistant
+HealthBot is an advanced AI-powered health assistant built with Flask, Cohere AI, and MongoDB that provides intelligent health conversations with proper medical safety features.
 
 ✨ Features
-💬 AI Health Chat - Smart responses using Hugging Face API with local fallback
+💬 AI Health Chat - Smart responses using Cohere AI with medical safety guidelines
 
-📜 Chat History - Persistent conversation storage in MongoDB
+📅 30-Day Chat History - Access previous conversations with daily auto-sessions
 
-➕ New Chat Sessions - Create and switch between multiple conversations
+🆕 New Chat Sessions - Start fresh conversations anytime
 
-🎤 Voice Input - Speech-to-text functionality with microphone support
+🎤 Voice Features - Text-to-speech with stop functionality
 
-🖥 Beautiful UI - Modern gradient design with responsive layout
+🔐 User Authentication - Secure JWT-based login/register system
 
-🔐 User Authentication - Secure login/register system
+⚠️ Medical Disclaimers - Always reminds to consult healthcare professionals
 
-⚠️ Medical Disclaimers - Always reminds to consult healthcare professionals,
-    Using Kafka for emergeny alerts
+🚀 Kafka Integration - Message queuing and event processing
+
+🎨 Beautiful UI - Modern gradient design with responsive layout
