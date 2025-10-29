@@ -1,1553 +1,1538 @@
-from kafka_service import kafka_service
-from health_alerts import alert_manager
 import os
-import time
-import json
 import jwt
-import bcrypt
-import requests
-import random
+import uuid
+import json
+import threading
 from datetime import datetime, timedelta
+from flask import Flask, request, jsonify, render_template_string
+from pymongo import MongoClient
 from dotenv import load_dotenv
-from flask import Flask, render_template_string, request, jsonify, Response
-from functools import wraps
-from pymongo import MongoClient, errors
-from bson import ObjectId
-import certifi
+import cohere
+from bcrypt import hashpw, gensalt, checkpw
+from kafka import KafkaProducer, KafkaConsumer
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-2024')
 
-# --- Configuration ---
-MONGO_USERNAME = os.getenv("MONGO_USERNAME")
-MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
-MONGO_CLUSTER = os.getenv("MONGO_CLUSTER")
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN", "")
-JWT_SECRET = os.getenv("JWT_SECRET", "your-jwt-secret-change-in-production")
-MONGO_URI = f"mongodb+srv://{MONGO_USERNAME}:{MONGO_PASSWORD}@{MONGO_CLUSTER}/?retryWrites=true&w=majority"
+# Medical Disclaimer
+MEDICAL_DISCLAIMER = """**Important Medical Disclaimer**: 
+I am an AI assistant and not a medical professional. My advice is for informational purposes only and should not be considered medical advice. Always consult with a qualified healthcare provider for medical concerns, diagnoses, or treatment. In case of emergency, contact emergency services immediately."""
 
-# --- Database & AI Initialization ---
-chats_collection = None
-users_collection = None
-ai_available = False
+HEALTH_PROMPT_TEMPLATE = """As a health assistant, provide helpful, accurate, and safe health information. Follow these guidelines:
 
-# MongoDB Setup
+1. Be empathetic and supportive
+2. Provide general wellness information
+3. For specific symptoms or medical conditions, recommend consulting a healthcare professional
+4. Never diagnose conditions or prescribe treatments
+5. Always include a disclaimer about consulting doctors
+6. Be clear that you're an AI assistant
+7. Focus on prevention and general wellness
+
+Current conversation:
+User: {user_message}
+Health Assistant:"""
+
+# MongoDB Configuration
 try:
-    client = MongoClient(MONGO_URI, tls=True, tlsCAFile=certifi.where())
-    client.admin.command('ismaster')
-    db = client["healthq_db"]
-    chats_collection = db["conversations"]
-    users_collection = db["users"]
-    print("✅ MongoDB connected successfully.")
+    mongo_uri = f"mongodb+srv://{os.getenv('MONGO_USERNAME')}:{os.getenv('MONGO_PASSWORD')}@{os.getenv('MONGO_CLUSTER')}/{os.getenv('MONGO_DB_NAME')}?retryWrites=true&w=majority"
+    client = MongoClient(mongo_uri)
+    db = client[os.getenv('MONGO_DB_NAME')]
+    print("✅ Connected to MongoDB successfully!")
 except Exception as e:
     print(f"❌ MongoDB connection failed: {e}")
-    chats_collection = None
-    users_collection = None
+    client, db = None, None
 
-# Hugging Face API Setup with READ permissions
+# Cohere AI Configuration
 try:
-    if HUGGINGFACE_TOKEN and HUGGINGFACE_TOKEN != "your-huggingface-token-here":
-        # Test the token with a simple public API call
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-        test_response = requests.get(
-            "https://huggingface.co/api/whoami-v2",
-            headers=headers,
-            timeout=10
-        )
-        if test_response.status_code == 200:
-            user_info = test_response.json()
-            ai_available = True
-            print(f"✅ Hugging Face API connected successfully. Welcome {user_info.get('name', 'User')}!")
-            print(f"✅ Token has READ permissions - perfect for inference!")
-        else:
-            print(f"❌ Hugging Face API test failed: {test_response.status_code}")
-            print("Using smart local responses instead.")
-            ai_available = False
-    else:
-        print("❌ Hugging Face token not found in environment variables")
-        ai_available = False
+    cohere_client = cohere.Client(os.getenv('COHERE_API_KEY'))
+    print("✅ Cohere AI configured successfully!")
 except Exception as e:
-    print(f"❌ Hugging Face initialization failed: {e}")
-    print("Using smart local responses instead.")
-    ai_available = False
+    print(f"❌ Cohere AI configuration failed: {e}")
+    cohere_client = None
 
-# Enhanced health knowledge base
-HEALTH_KNOWLEDGE = {
-    "greetings": [
-        "Hello! I'm HealthQ, your AI health assistant. I'm here to provide general health information and wellness tips. How can I help you today? 😊",
-        "Hi there! I'm HealthQ, ready to discuss health and wellness topics. What would you like to know?",
-        "Welcome! I'm HealthQ, your health assistant. I can help with fitness, nutrition, mental wellness, and general health questions. What's on your mind?"
-    ],
-    
-    "symptoms": {
-        "headache": "Headaches can have many causes including stress, dehydration, or tension. Try resting in a quiet room, staying hydrated, and applying a cool compress. If headaches persist or are severe, consult a doctor.",
-        "fever": "Fever is often a sign your body is fighting infection. Rest, stay hydrated, and monitor your temperature. If fever is high (above 102°F/39°C) or lasts more than 3 days, see a doctor.",
-        "cough": "For coughs, stay hydrated, use a humidifier, and try honey in warm water. If cough persists beyond 2 weeks or is accompanied by breathing difficulties, seek medical attention.",
-        "fatigue": "Fatigue can result from poor sleep, stress, or nutritional deficiencies. Ensure you're getting 7-9 hours of sleep, eating balanced meals, and managing stress.",
-        "stomach_pain": "For mild stomach discomfort, try the BRAT diet (bananas, rice, applesauce, toast) and stay hydrated. If pain is severe or persistent, consult a healthcare provider."
-    },
-    
-    "nutrition": [
-        "A balanced diet includes fruits, vegetables, whole grains, lean proteins, and healthy fats. Aim for variety and colorful plates!",
-        "Stay hydrated by drinking plenty of water throughout the day. Most adults need about 8-10 cups (2-2.5 liters) daily.",
-        "Limit processed foods, added sugars, and excessive salt. Focus on whole, nutrient-dense foods for optimal health.",
-        "Include fiber-rich foods like fruits, vegetables, and whole grains to support digestive health.",
-        "Don't skip breakfast! A balanced morning meal can help maintain energy levels throughout the day."
-    ],
-    
-    "fitness": [
-        "Aim for at least 150 minutes of moderate exercise or 75 minutes of vigorous exercise per week.",
-        "Include both cardio (walking, running, swimming) and strength training exercises in your routine.",
-        "Remember to warm up before exercise and cool down afterward to prevent injuries.",
-        "Find activities you enjoy - you're more likely to stick with exercise you find fun!",
-        "Even short bursts of activity throughout the day can contribute to your fitness goals."
-    ]
-}
+# Kafka Configuration
+KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'false').lower() == 'true'
+KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
 
-def get_smart_local_response(user_message):
-    """Generate intelligent health responses based on user input"""
-    user_msg_lower = user_message.lower().strip()
-    
-    # Greetings
-    if any(word in user_msg_lower for word in ['hello', 'hi', 'hey', 'greetings', 'good morning', 'good afternoon']):
-        return random.choice(HEALTH_KNOWLEDGE["greetings"])
-    
-    # Specific symptoms
-    if 'headache' in user_msg_lower:
-        return HEALTH_KNOWLEDGE["symptoms"]["headache"] + "\n\n⚠️ If headaches are severe or persistent, please consult a doctor."
-    
-    if 'fever' in user_msg_lower:
-        return HEALTH_KNOWLEDGE["symptoms"]["fever"] + "\n\n🌡️ Monitor your temperature and seek medical care if concerned."
-    
-    if 'cough' in user_msg_lower:
-        return HEALTH_KNOWLEDGE["symptoms"]["cough"] + "\n\n🤧 Persistent coughs should be evaluated by a healthcare provider."
-    
-    if any(word in user_msg_lower for word in ['tired', 'fatigue', 'exhausted', 'low energy']):
-        return HEALTH_KNOWLEDGE["symptoms"]["fatigue"] + "\n\n💤 Quality sleep and proper nutrition can help combat fatigue."
-    
-    # Nutrition topics
-    if any(word in user_msg_lower for word in ['diet', 'nutrition', 'food', 'eat', 'meal', 'weight']):
-        response = random.choice(HEALTH_KNOWLEDGE["nutrition"])
-        return f"{response}\n\n🍎 Remember: A registered dietitian can provide personalized nutrition advice."
-    
-    # Fitness topics
-    if any(word in user_msg_lower for word in ['exercise', 'workout', 'fitness', 'gym', 'run', 'walk']):
-        response = random.choice(HEALTH_KNOWLEDGE["fitness"])
-        return f"{response}\n\n🏃‍♂️ Always consult with a doctor before starting new exercise programs."
-    
-    # Mental health topics
-    if any(word in user_msg_lower for word in ['stress', 'anxiety', 'depression', 'mental', 'mood', 'worry']):
-        return "🧠 Mental health is important! Practice stress management, stay connected with loved ones, and don't hesitate to seek professional support if needed. Your wellbeing matters!"
-    
-    # Sleep topics
-    if any(word in user_msg_lower for word in ['sleep', 'insomnia', 'tired', 'rest', 'bedtime']):
-        return "😴 Most adults need 7-9 hours of quality sleep. Create a consistent sleep schedule, make your bedroom comfortable, and avoid screens before bed for better rest."
-    
-    # Hydration
-    if any(word in user_msg_lower for word in ['water', 'hydrate', 'hydration', 'thirsty', 'dehydrated']):
-        return "💧 Staying hydrated is crucial! Aim for 8-10 cups of water daily. You can also get fluids from fruits, vegetables, and herbal teas."
-    
-    # Thank you responses
-    if any(word in user_msg_lower for word in ['thank', 'thanks', 'appreciate']):
-        return "You're welcome! 😊 I'm glad I could help. Remember, I'm here for general health information - always consult healthcare professionals for personal medical advice."
-    
-    # Help
-    if 'help' in user_msg_lower:
-        return "I can help with: \n• Nutrition and diet 🍎\n• Exercise and fitness 🏃‍♂️\n• Mental wellness 🧠\n• Sleep improvement 😴\n• General health information 💊\n\nWhat would you like to know about?"
-    
-    # Default response
-    default_responses = [
-        "I'm here to provide general health information. Could you tell me more about what health topic interests you?",
-        "I specialize in health and wellness topics. Are you asking about nutrition, exercise, mental health, or something else?",
-        "I'd love to help with your health question! Could you provide more details about what you'd like to know?"
-    ]
-    
-    return random.choice(default_responses) + "\n\n💡 Remember: For personal medical advice, please consult a healthcare professional."
-
-def get_huggingface_response(user_message):
-    """Get response from Hugging Face using models with READ permissions"""
+kafka_producer = None
+if KAFKA_ENABLED:
     try:
-        # Using models that work with read permissions
-        API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium"
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-        
-        payload = {
-            "inputs": user_message,
-            "parameters": {
-                "max_new_tokens": 100,
-                "temperature": 0.7,
-                "do_sample": True,
-                "return_full_text": False
-            },
-            "options": {
-                "wait_for_model": True,
-                "use_cache": True
-            }
-        }
-        
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            if isinstance(result, list) and len(result) > 0:
-                generated_text = result[0].get('generated_text', '').strip()
-                
-                if generated_text and len(generated_text) > 10:
-                    # Add medical disclaimer
-                    return f"{generated_text}\n\n⚠️ Note: I am an AI assistant, not a doctor. Please consult a healthcare professional for medical advice."
-                else:
-                    return get_smart_local_response(user_message)
-            else:
-                return get_smart_local_response(user_message)
-        else:
-            print(f"Hugging Face API error: {response.status_code}")
-            return get_smart_local_response(user_message)
-            
+        kafka_producer = KafkaProducer(
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+            key_serializer=lambda v: v.encode('utf-8') if v else None
+        )
+        print("✅ Kafka producer connected successfully!")
     except Exception as e:
-        print(f"Error calling Hugging Face API: {e}")
-        return get_smart_local_response(user_message)
+        print(f"❌ Kafka connection failed: {e}")
+        KAFKA_ENABLED = False
 
-def get_ai_response(user_message):
-    """Get the best available response"""
-    if ai_available:
-        try:
-            return get_huggingface_response(user_message)
-        except:
-            return get_smart_local_response(user_message)
-    else:
-        return get_smart_local_response(user_message)
-
-# --- Utility Functions for Validation ---
-def validate_email(email):
-    """Validate email format"""
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return re.match(pattern, email) is not None
-
-def validate_password(password):
-    """Validate password strength"""
-    return len(password) >= 6
-
-def validate_name(name):
-    """Validate name"""
-    return len(name.strip()) >= 2
-
-# --- Authentication Decorators ---
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
+# Initialize Database
+def init_database():
+    if db is None:
+        return
+    
+    try:
+        collections = ['users', 'conversations', 'message_logs', 'chat_sessions']
+        existing_collections = db.list_collection_names()
         
+        for collection_name in collections:
+            if collection_name not in existing_collections:
+                db.create_collection(collection_name)
+                print(f"✅ Created collection: {collection_name}")
+        
+        db.users.create_index([("email", 1)], unique=True)
+        db.conversations.create_index([("user_id", 1), ("timestamp", -1)])
+        db.conversations.create_index([("session_id", 1)])
+        db.chat_sessions.create_index([("user_id", 1), ("created_at", -1)])
+        print("✅ Database initialized successfully!")
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
+
+init_database()
+
+# Authentication Middleware
+def token_required(f):
+    def decorated(*args, **kwargs):
+        if db is None:
+            return jsonify({"error": "Database connection unavailable"}), 503
+            
+        token = request.headers.get('Authorization')
         if not token:
-            return jsonify({'error': 'Token is missing'}), 401
+            return jsonify({"error": "Token is missing"}), 401
         
         try:
             if token.startswith('Bearer '):
                 token = token[7:]
-            data = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
-            current_user = data['user_id']
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token has expired'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'error': 'Token is invalid'}), 401
+            data = jwt.decode(token, os.getenv('JWT_SECRET', 'secret'), algorithms=["HS256"])
+            current_user = db.users.find_one({"user_id": data['user_id']})
+            if not current_user:
+                return jsonify({"error": "User not found"}), 401
+            request.current_user = current_user
+        except Exception as e:
+            return jsonify({"error": "Invalid token"}), 401
         
-        return f(current_user, *args, **kwargs)
+        return f(*args, **kwargs)
+    decorated.__name__ = f.__name__
     return decorated
 
-# --- Authentication Routes ---
-@app.route("/register", methods=["POST"])
-def register():
-    try:
-        data = request.json
-        email = data.get('email', '').strip()
-        password = data.get('password', '')
-        name = data.get('name', '').strip()
-
-        # Validation
-        if not email or not password or not name:
-            return jsonify({'error': 'All fields are required'}), 400
-
-        if not validate_email(email):
-            return jsonify({'error': 'Invalid email format'}), 400
-
-        if not validate_password(password):
-            return jsonify({'error': 'Password must be at least 6 characters long'}), 400
-
-        if not validate_name(name):
-            return jsonify({'error': 'Name must be at least 2 characters long'}), 400
-
-        # Check if user already exists
-        if users_collection is not None:
-            existing_user = users_collection.find_one({"email": email})
-            if existing_user:
-                return jsonify({'error': 'User already exists with this email'}), 400
-
-        # Hash password
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-        # Create user
-        user_data = {
-            "email": email,
-            "password": hashed_password,
-            "name": name,
-            "created_at": datetime.now()
-        }
-
-        if users_collection is not None:
-            result = users_collection.insert_one(user_data)
-            user_id = str(result.inserted_id)
-        else:
-            return jsonify({'error': 'Database not available. Please try again later.'}), 500
-
-        # Generate JWT token
-        token = jwt.encode({
-            'user_id': user_id,
-            'email': email,
-            'name': name,
-            'exp': datetime.utcnow() + timedelta(days=7)
-        }, JWT_SECRET, algorithm='HS256')
-
-        return jsonify({
-            'message': 'Account created successfully!',
-            'token': token,
-            'user_id': user_id,
-            'name': name
-        }), 201
-
-    except Exception as e:
-        return jsonify({'error': f'Registration failed: {str(e)}'}), 500
-
-@app.route("/login", methods=["POST"])
-def login():
-    try:
-        data = request.json
-        email = data.get('email', '').strip()
-        password = data.get('password', '')
-
-        if not email or not password:
-            return jsonify({'error': 'Email and password are required'}), 400
-
-        # Find user
-        if users_collection is not None:
-            user = users_collection.find_one({"email": email})
-            if not user:
-                return jsonify({'error': 'Invalid email or password'}), 401
-
-            # Verify password
-            if not bcrypt.checkpw(password.encode('utf-8'), user['password']):
-                return jsonify({'error': 'Invalid email or password'}), 401
-
-            user_id = str(user['_id'])
-            user_name = user.get('name', 'User')
-        else:
-            return jsonify({'error': 'Database not available'}), 500
-
-        # Generate JWT token
-        token = jwt.encode({
-            'user_id': user_id,
-            'email': email,
-            'name': user_name,
-            'exp': datetime.utcnow() + timedelta(days=7)
-        }, JWT_SECRET, algorithm='HS256')
-
-        return jsonify({
-            'message': 'Login successful!',
-            'token': token,
-            'user_id': user_id,
-            'name': user_name
-        }), 200
-
-    except Exception as e:
-        return jsonify({'error': f'Login failed: {str(e)}'}), 500
-
-# --- Health Check Route ---
-@app.route("/health")
-def health_check():
-    """Health check endpoint"""
-    db_status = "connected" if users_collection is not None else "disconnected"
-    
-    return jsonify({
-        "status": "healthy",
-        "database": db_status,
-        "ai_service": "connected" if ai_available else "local_responses",
-        "ai_available": ai_available,
-        "timestamp": datetime.now().isoformat()
-    })
-
-# --- Debug Route ---
-@app.route("/debug-db")
-def debug_db():
-    """Check database connection"""
-    if users_collection is not None:
+# Kafka Message Producer
+def send_kafka_message(topic, message, key=None):
+    if KAFKA_ENABLED and kafka_producer:
         try:
-            user_count = users_collection.count_documents({})
-            return jsonify({
-                "database_status": "connected",
-                "users_collection": "exists", 
-                "total_users": user_count
-            })
+            kafka_producer.send(topic, value=message, key=key)
+            kafka_producer.flush()
         except Exception as e:
-            return jsonify({
-                "database_status": "error",
-                "error": str(e)
-            })
-    else:
-        return jsonify({
-            "database_status": "not_connected",
-            "users_collection": "none"
-        })
+            print(f"❌ Kafka message sending failed: {e}")
 
-# --- Chat Route ---
-@app.route("/chat", methods=["POST"])
-@token_required
-def chat(current_user):
+# Kafka Consumer
+def start_kafka_consumer():
+    if not KAFKA_ENABLED:
+        return
+    
+    def consume_messages():
+        try:
+            consumer = KafkaConsumer(
+                'chat_messages',
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+                group_id='chatbot_group',
+                auto_offset_reset='earliest'
+            )
+            
+            for message in consumer:
+                process_kafka_message(message.value)
+                
+        except Exception as e:
+            print(f"❌ Kafka consumer error: {e}")
+    
+    consumer_thread = threading.Thread(target=consume_messages, daemon=True)
+    consumer_thread.start()
+
+def process_kafka_message(message):
     try:
-        user_msg = request.json.get("message")
-        session_id = request.json.get("session_id")
-
-        if not user_msg:
-            return jsonify({"error": "Message is required"}), 400
-
-        # Get AI response
-        response_text = get_ai_response(user_msg)
-
-        # 🔥 NEW: Analyze for critical health alerts
-        alert_data = alert_manager.analyze_message_for_alerts(
-            current_user, user_msg, response_text
-        )
-
-        # Save to database if available
-        if chats_collection is not None:
-            try:
-                chat_data = {
-                    "user_id": current_user,
-                    "user": user_msg,
-                    "bot": response_text,
-                    "timestamp": datetime.now(),
-                    "ai_available": ai_available,
-                    "alert_triggered": alert_data is not None  # NEW FIELD
-                }
-                
-                if session_id:
-                    chats_collection.update_one(
-                        {"_id": ObjectId(session_id), "user_id": current_user},
-                        {"$set": chat_data}
-                    )
-                    result_id = session_id
-                else:
-                    result = chats_collection.insert_one(chat_data)
-                    result_id = str(result.inserted_id)
-                
-                return jsonify({
-                    "response": response_text,
-                    "session_id": result_id,
-                    "alert_triggered": alert_data is not None  # NEW RESPONSE FIELD
-                })
-            except Exception as db_error:
-                print(f"Database error: {db_error}")
-                return jsonify({
-                    "response": response_text,
-                    "session_id": session_id,
-                    "alert_triggered": alert_data is not None
-                })
-        else:
-            return jsonify({
-                "response": response_text,
-                "session_id": session_id,
-                "alert_triggered": alert_data is not None
+        print(f"📨 Processing Kafka message: {message}")
+        if db:
+            db.message_logs.insert_one({
+                **message,
+                'processed_at': datetime.utcnow()
             })
-
     except Exception as e:
-        print(f"Chat error: {e}")
-        return jsonify({
-            "response": "I apologize, but I'm having trouble responding right now. Please try again later.",
+        print(f"❌ Error processing Kafka message: {e}")
+
+# Start Kafka consumer
+start_kafka_consumer()
+
+# Helper function to get or create current session
+def get_current_session(user_id):
+    if not db:
+        return str(uuid.uuid4())
+    
+    # Get today's session or create new one
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    session = db.chat_sessions.find_one({
+        "user_id": user_id,
+        "created_at": {"$gte": today_start}
+    })
+    
+    if not session:
+        session_id = str(uuid.uuid4())
+        session_data = {
             "session_id": session_id,
-            "alert_triggered": False
-        })
-@app.route("/history", methods=["GET"])
-@token_required
-def history(current_user):
-    try:
-        if chats_collection is not None:
-            # Only get chats for this user
-            chats = list(chats_collection.find(
-                {"user_id": current_user}
-            ).sort("timestamp", -1).limit(10))
-            
-            # Convert ObjectId to string for JSON serialization
-            for chat in chats:
-                chat['_id'] = str(chat['_id'])
-                
-            return jsonify(chats)
-        else:
-            return jsonify([])
-    except Exception as e:
-        print(f"Error fetching history: {e}")
-        return jsonify([])
+            "user_id": user_id,
+            "created_at": datetime.utcnow(),
+            "message_count": 0
+        }
+        db.chat_sessions.insert_one(session_data)
+        return session_id
+    
+    return session["session_id"]
 
-# --- Main Route with Complete HTML Template ---
-@app.route("/")
-def home():
-    HTML_TEMPLATE = """
+# Animated Frontend Templates
+HTML_TEMPLATES = {
+    'index': '''
     <!DOCTYPE html>
-    <html lang="en">
+    <html>
     <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-      <title>🤖 HealthQ - AI Health Assistant</title>
-      <style>
-      @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
-      
-      :root {
-          --primary: #6c63ff;
-          --secondary: #4fd1c5;
-          --danger: #ff6b6b;
-          --text: #2d3748;
-          --bg: #f8f9fa;
-      }
-      
-      * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-      }
-      
-      body {
-          font-family: 'Poppins', sans-serif;
-          background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
-          background-size: 400% 400%;
-          animation: gradient 15s ease infinite;
-          min-height: 100vh;
-          padding: 20px;
-          color: var(--text);
-          display: flex;
-          justify-content: center;
-          align-items: center;
-      }
-      
-      @keyframes gradient {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-      }
-
-      /* Auth Styles */
-      .auth-container {
-          width: 100%;
-          max-width: 400px;
-          background: rgba(255, 255, 255, 0.95);
-          border-radius: 20px;
-          padding: 40px 30px;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-      }
-      
-      .auth-header {
-          text-align: center;
-          margin-bottom: 30px;
-      }
-      
-      .auth-header h1 {
-          color: var(--primary);
-          font-size: 28px;
-          margin-bottom: 10px;
-      }
-      
-      .auth-header p {
-          color: #666;
-          font-size: 14px;
-      }
-      
-      .auth-tabs {
-          display: flex;
-          background: #f8f9fa;
-          border-radius: 12px;
-          padding: 4px;
-          margin-bottom: 25px;
-      }
-      
-      .auth-tab {
-          flex: 1;
-          padding: 12px;
-          text-align: center;
-          background: transparent;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 500;
-          transition: all 0.3s ease;
-      }
-      
-      .auth-tab.active {
-          background: var(--primary);
-          color: white;
-          box-shadow: 0 4px 12px rgba(108, 99, 255, 0.3);
-      }
-      
-      .auth-form {
-          display: none;
-      }
-      
-      .auth-form.active {
-          display: block;
-          animation: fadeIn 0.5s ease;
-      }
-      
-      @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-      }
-      
-      .auth-input-group {
-          margin-bottom: 20px;
-      }
-      
-      .auth-input {
-          width: 100%;
-          padding: 15px;
-          border: 2px solid #e2e8f0;
-          border-radius: 12px;
-          font-size: 16px;
-          transition: all 0.3s ease;
-          background: white;
-      }
-      
-      .auth-input:focus {
-          outline: none;
-          border-color: var(--primary);
-          box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.1);
-      }
-      
-      .auth-btn {
-          width: 100%;
-          padding: 15px;
-          background: var(--primary);
-          color: white;
-          border: none;
-          border-radius: 12px;
-          cursor: pointer;
-          font-size: 16px;
-          font-weight: 600;
-          transition: all 0.3s ease;
-          margin-top: 10px;
-      }
-      
-      .auth-btn:hover {
-          background: #5a52e0;
-          transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(108, 99, 255, 0.3);
-      }
-      
-      .auth-btn:active {
-          transform: translateY(0);
-      }
-      
-      .error-message {
-          background: #fed7d7;
-          color: #c53030;
-          padding: 12px;
-          border-radius: 8px;
-          margin-bottom: 20px;
-          font-size: 14px;
-          display: none;
-      }
-      
-      .success-message {
-          background: #c6f6d5;
-          color: #276749;
-          padding: 12px;
-          border-radius: 8px;
-          margin-bottom: 20px;
-          font-size: 14px;
-          display: none;
-      }
-      
-      .chat-interface {
-          display: none;
-          width: 100%;
-          max-width: 1400px;
-          height: 90vh;
-      }
-      
-      .user-info {
-          position: absolute;
-          top: 20px;
-          right: 20px;
-          color: white;
-          background: rgba(0,0,0,0.5);
-          padding: 10px 20px;
-          border-radius: 25px;
-          font-size: 14px;
-          z-index: 1000;
-      }
-
-      /* Chat Interface Styles */
-      .chat-layout {
-          display: flex;
-          width: 100%;
-          height: 100%;
-          gap: 20px;
-      }
-      
-      /* Sidebar Styles */
-      .sidebar {
-          width: 300px;
-          background: rgba(255, 255, 255, 0.95);
-          border-radius: 20px;
-          padding: 20px;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          display: flex;
-          flex-direction: column;
-      }
-      
-      .sidebar-header {
-          margin-bottom: 20px;
-      }
-      
-      .new-chat-btn {
-          width: 100%;
-          padding: 12px;
-          background: var(--primary);
-          color: white;
-          border: none;
-          border-radius: 12px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.3s ease;
-          margin-bottom: 20px;
-      }
-      
-      .new-chat-btn:hover {
-          background: #5a52e0;
-          transform: translateY(-2px);
-      }
-      
-      .chat-history {
-          flex: 1;
-          overflow-y: auto;
-      }
-      
-      .chat-history-item {
-          padding: 12px;
-          margin-bottom: 8px;
-          background: #f8f9fa;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all 0.3s ease;
-          border: 1px solid transparent;
-      }
-      
-      .chat-history-item:hover {
-          background: #e9ecef;
-          border-color: var(--primary);
-      }
-      
-      .chat-history-item.active {
-          background: var(--primary);
-          color: white;
-      }
-      
-      .chat-preview {
-          font-size: 12px;
-          color: #666;
-          margin-top: 4px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-      }
-      
-      .chat-history-item.active .chat-preview {
-          color: rgba(255,255,255,0.8);
-      }
-      
-      .chat-date {
-          font-size: 10px;
-          color: #999;
-          margin-top: 4px;
-      }
-      
-      .chat-history-item.active .chat-date {
-          color: rgba(255,255,255,0.6);
-      }
-      
-      /* Main Chat Container */
-      .chat-container {
-          flex: 1;
-          background: rgba(255, 255, 255, 0.95);
-          border-radius: 20px;
-          display: flex;
-          flex-direction: column;
-          box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          overflow: hidden;
-      }
-      
-      .chat-header {
-          background: var(--primary);
-          color: white;
-          padding: 20px;
-          text-align: center;
-          border-radius: 20px 20px 0 0;
-      }
-      
-      .chat-header h2 {
-          margin: 0;
-          font-size: 24px;
-      }
-      
-      .chat-messages {
-          flex: 1;
-          padding: 20px;
-          overflow-y: auto;
-          background: #f8f9fa;
-          scroll-behavior: smooth;
-      }
-      
-      .chat-messages::-webkit-scrollbar {
-          width: 6px;
-      }
-      
-      .chat-messages::-webkit-scrollbar-track {
-          background: #f1f1f1;
-          border-radius: 3px;
-      }
-      
-      .chat-messages::-webkit-scrollbar-thumb {
-          background: #c1c1c1;
-          border-radius: 3px;
-      }
-      
-      .chat-messages::-webkit-scrollbar-thumb:hover {
-          background: #a8a8a8;
-      }
-      
-      .message {
-          margin-bottom: 15px;
-          padding: 12px 16px;
-          border-radius: 18px;
-          max-width: 70%;
-          word-wrap: break-word;
-          animation: fadeIn 0.3s ease;
-      }
-      
-      .user-message {
-          background: var(--primary);
-          color: white;
-          margin-left: auto;
-          border-bottom-right-radius: 4px;
-      }
-      
-      .bot-message {
-          background: white;
-          color: var(--text);
-          border: 1px solid #e2e8f0;
-          margin-right: auto;
-          border-bottom-left-radius: 4px;
-      }
-      
-      .chat-input-container {
-          padding: 20px;
-          border-top: 1px solid #e2e8f0;
-          background: white;
-      }
-      
-      .chat-input-wrapper {
-          display: flex;
-          gap: 10px;
-          align-items: center;
-      }
-      
-      .chat-input {
-          flex: 1;
-          padding: 15px;
-          border: 2px solid #e2e8f0;
-          border-radius: 25px;
-          font-size: 16px;
-          outline: none;
-          transition: border-color 0.3s ease;
-      }
-      
-      .chat-input:focus {
-          border-color: var(--primary);
-      }
-      
-      .mic-button {
-          background: #4fd1c5;
-          color: white;
-          border: none;
-          border-radius: 50%;
-          width: 50px;
-          height: 50px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.3s ease;
-          font-size: 18px;
-      }
-      
-      .mic-button:hover {
-          background: #38b2ac;
-          transform: scale(1.05);
-      }
-      
-      .mic-button.recording {
-          background: var(--danger);
-          animation: pulse 1.5s infinite;
-      }
-      
-      .stop-button {
-          background: var(--danger);
-          color: white;
-          border: none;
-          border-radius: 50%;
-          width: 50px;
-          height: 50px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.3s ease;
-          font-size: 18px;
-          display: none;
-      }
-      
-      .stop-button:hover {
-          background: #e53e3e;
-          transform: scale(1.05);
-      }
-      
-      .send-button {
-          background: var(--primary);
-          color: white;
-          border: none;
-          border-radius: 50%;
-          width: 50px;
-          height: 50px;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: all 0.3s ease;
-          font-size: 18px;
-      }
-      
-      .send-button:hover {
-          background: #5a52e0;
-          transform: scale(1.05);
-      }
-      
-      .send-button:disabled {
-          background: #ccc;
-          cursor: not-allowed;
-          transform: none;
-      }
-      
-      .typing-indicator {
-          display: none;
-          padding: 12px 16px;
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 18px;
-          margin-right: auto;
-          max-width: 70%;
-          border-bottom-left-radius: 4px;
-          color: #666;
-          font-style: italic;
-      }
-      
-      .disclaimer {
-          font-size: 12px;
-          color: #666;
-          text-align: center;
-          padding: 10px;
-          background: #f1f3f4;
-          border-radius: 10px;
-          margin-top: 10px;
-      }
-      
-      @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.1); }
-          100% { transform: scale(1); }
-      }
-      
-      .empty-state {
-          text-align: center;
-          color: #666;
-          padding: 40px 20px;
-      }
-      
-      .empty-state i {
-          font-size: 48px;
-          margin-bottom: 10px;
-          opacity: 0.5;
-      }
-
-      .ai-status {
-          padding: 8px 12px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 500;
-          margin-top: 10px;
-          text-align: center;
-      }
-      
-      .ai-status.connected {
-          background: #c6f6d5;
-          color: #276749;
-      }
-      
-      .ai-status.disconnected {
-          background: #fed7d7;
-          color: #c53030;
-      }
-      </style>
+        <title>HealthBot - Your AI Health Assistant</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            @keyframes float {
+                0%, 100% { transform: translateY(0px); }
+                50% { transform: translateY(-10px); }
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.7; }
+            }
+            .float-animation { animation: float 3s ease-in-out infinite; }
+            .fade-in { animation: fadeIn 0.6s ease-out; }
+            .pulse-animation { animation: pulse 2s ease-in-out infinite; }
+            .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+            .health-gradient { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+            .chat-bubble-user { 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-bottom-right-radius: 4px;
+            }
+            .chat-bubble-bot { 
+                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                border-bottom-left-radius: 4px;
+            }
+        </style>
     </head>
-    <body>
-      <!-- Authentication Interface -->
-      <div id="authInterface" class="auth-container">
-        <div class="auth-header">
-          <h1>🤖 HealthQ</h1>
-          <p>AI Health Assistant - Secure Login</p>
-        </div>
+    <body class="bg-gray-100 min-h-screen">
+        <!-- Animated Background -->
+        <div class="fixed inset-0 gradient-bg opacity-10 z-0"></div>
         
-        <div class="error-message" id="errorMessage"></div>
-        <div class="success-message" id="successMessage"></div>
-        
-        <div class="auth-tabs">
-          <button class="auth-tab active" onclick="showAuthForm('login')">Login</button>
-          <button class="auth-tab" onclick="showAuthForm('register')">Create Account</button>
-        </div>
-        
-        <div id="loginForm" class="auth-form active">
-          <div class="auth-input-group">
-            <input type="email" id="loginEmail" class="auth-input" placeholder="Enter your email" required>
-          </div>
-          <div class="auth-input-group">
-            <input type="password" id="loginPassword" class="auth-input" placeholder="Enter your password" required>
-          </div>
-          <button class="auth-btn" onclick="handleLogin()">Login to HealthQ</button>
-        </div>
-        
-        <div id="registerForm" class="auth-form">
-          <div class="auth-input-group">
-            <input type="text" id="registerName" class="auth-input" placeholder="Full name" required>
-          </div>
-          <div class="auth-input-group">
-            <input type="email" id="registerEmail" class="auth-input" placeholder="Email address" required>
-          </div>
-          <div class="auth-input-group">
-            <input type="password" id="registerPassword" class="auth-input" placeholder="Create password" required>
-          </div>
-          <button class="auth-btn" onclick="handleRegister()">Create Account</button>
-        </div>
-      </div>
-
-      <!-- Chat Interface (Hidden initially) -->
-      <div id="chatInterface" class="chat-interface">
-        <div class="user-info" id="userInfo">
-          Welcome! • <a href="#" onclick="handleLogout()" style="color: white; margin-left: 10px;">Logout</a>
-        </div>
-        
-        <!-- Chat Layout with Sidebar -->
-        <div class="chat-layout">
-          <!-- Sidebar for Chat History -->
-          <div class="sidebar">
-            <div class="sidebar-header">
-              <button class="new-chat-btn" onclick="createNewChat()">
-                ＋ New Chat
-              </button>
-              <div id="aiStatus" class="ai-status disconnected">
-                AI: Connecting...
-              </div>
-            </div>
-            <div class="chat-history" id="chatHistory">
-              <!-- Chat history will be loaded here -->
-            </div>
-          </div>
-          
-          <!-- Main Chat Area -->
-          <div id="chatAppContainer"></div>
-        </div>
-      </div>
-
-      <script>
-        let authToken = null;
-        let currentUserId = null;
-        let currentUserName = null;
-        let currentSessionId = null;
-        let isRecording = false;
-        let recognition = null;
-        let aiAvailable = false;
-
-        // Check AI status on load
-        async function checkAIStatus() {
-          try {
-            const response = await fetch('/health');
-            const data = await response.json();
-            aiAvailable = data.ai_available;
-            
-            const aiStatus = document.getElementById('aiStatus');
-            if (aiAvailable) {
-              aiStatus.textContent = 'AI: Connected ✓';
-              aiStatus.className = 'ai-status connected';
-            } else {
-              aiStatus.textContent = 'AI: Using Local Mode';
-              aiStatus.className = 'ai-status disconnected';
-            }
-          } catch (error) {
-            console.error('Error checking AI status:', error);
-          }
-        }
-
-        // Initialize speech recognition
-        function initSpeechRecognition() {
-          if ('webkitSpeechRecognition' in window) {
-            recognition = new webkitSpeechRecognition();
-            recognition.continuous = false;
-            recognition.interimResults = false;
-            recognition.lang = 'en-US';
-
-            recognition.onstart = function() {
-              isRecording = true;
-              updateRecordingUI();
-            };
-
-            recognition.onresult = function(event) {
-              const transcript = event.results[0][0].transcript;
-              document.getElementById('userInput').value = transcript;
-            };
-
-            recognition.onerror = function(event) {
-              console.error('Speech recognition error', event.error);
-              stopRecording();
-            };
-
-            recognition.onend = function() {
-              stopRecording();
-            };
-          } else {
-            console.log('Speech recognition not supported');
-          }
-        }
-
-        function startRecording() {
-          if (recognition) {
-            recognition.start();
-          }
-        }
-
-        function stopRecording() {
-          if (recognition) {
-            recognition.stop();
-            isRecording = false;
-            updateRecordingUI();
-          }
-        }
-
-        function updateRecordingUI() {
-          const micButton = document.getElementById('micButton');
-          const stopButton = document.getElementById('stopButton');
-          
-          if (isRecording) {
-            micButton.style.display = 'none';
-            stopButton.style.display = 'flex';
-          } else {
-            micButton.style.display = 'flex';
-            stopButton.style.display = 'none';
-          }
-        }
-
-        // Show auth form function
-        function showAuthForm(formType) {
-          // Update tabs
-          document.querySelectorAll('.auth-tab').forEach(tab => {
-            tab.classList.remove('active');
-          });
-          event.target.classList.add('active');
-          
-          // Update forms
-          document.querySelectorAll('.auth-form').forEach(form => {
-            form.classList.remove('active');
-          });
-          document.getElementById(formType + 'Form').classList.add('active');
-          
-          // Clear messages
-          hideMessages();
-        }
-
-        // Hide all messages
-        function hideMessages() {
-          document.getElementById('errorMessage').style.display = 'none';
-          document.getElementById('successMessage').style.display = 'none';
-        }
-
-        // Show error message
-        function showError(message) {
-          const errorDiv = document.getElementById('errorMessage');
-          errorDiv.textContent = message;
-          errorDiv.style.display = 'block';
-          document.getElementById('successMessage').style.display = 'none';
-        }
-
-        // Show success message
-        function showSuccess(message) {
-          const successDiv = document.getElementById('successMessage');
-          successDiv.textContent = message;
-          successDiv.style.display = 'block';
-          document.getElementById('errorMessage').style.display = 'none';
-        }
-
-        // Handle login
-        async function handleLogin() {
-          const email = document.getElementById('loginEmail').value.trim();
-          const password = document.getElementById('loginPassword').value.trim();
-
-          if (!email || !password) {
-            showError('Please fill in all fields');
-            return;
-          }
-
-          try {
-            const response = await fetch('/login', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json' 
-              },
-              body: JSON.stringify({ email, password })
-            });
-
-            const data = await response.json();
-            
-            if (response.ok) {
-              authToken = data.token;
-              currentUserId = data.user_id;
-              currentUserName = data.name;
-              showChatInterface();
-              showSuccess('Login successful! Welcome back!');
-            } else {
-              showError(data.error || 'Login failed');
-            }
-          } catch (error) {
-            showError('Network error. Please try again.');
-          }
-        }
-
-        // Handle register
-        async function handleRegister() {
-          const name = document.getElementById('registerName').value.trim();
-          const email = document.getElementById('registerEmail').value.trim();
-          const password = document.getElementById('registerPassword').value.trim();
-
-          if (!name || !email || !password) {
-            showError('Please fill in all fields');
-            return;
-          }
-
-          if (password.length < 6) {
-            showError('Password must be at least 6 characters long');
-            return;
-          }
-
-          try {
-            const response = await fetch('/register', {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json' 
-              },
-              body: JSON.stringify({ name, email, password })
-            });
-
-            const data = await response.json();
-            
-            if (response.ok) {
-              showSuccess('Account created successfully! Please login.');
-              // Switch to login form after successful registration
-              setTimeout(() => {
-                showAuthForm('login');
-                document.getElementById('loginEmail').value = email;
-              }, 2000);
-            } else {
-              showError(data.error || 'Registration failed');
-            }
-          } catch (error) {
-            showError('Network error. Please try again.');
-          }
-        }
-
-        // Show chat interface
-        function showChatInterface() {
-          document.getElementById('authInterface').style.display = 'none';
-          document.getElementById('chatInterface').style.display = 'block';
-          document.getElementById('userInfo').innerHTML = 
-            `Welcome, ${currentUserName}! • <a href="#" onclick="handleLogout()" style="color: white; margin-left: 10px;">Logout</a>`;
-          
-          // Load chat history and initialize chat
-          loadChatHistory();
-          createNewChat();
-          checkAIStatus();
-        }
-
-        // Load chat history
-        async function loadChatHistory() {
-          try {
-            const response = await fetch('/history', {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${authToken}`
-              }
-            });
-
-            if (response.ok) {
-              const chats = await response.json();
-              displayChatHistory(chats);
-            }
-          } catch (error) {
-            console.error('Error loading chat history:', error);
-          }
-        }
-
-        // Display chat history in sidebar
-        function displayChatHistory(chats) {
-          const chatHistory = document.getElementById('chatHistory');
-          
-          if (chats.length === 0) {
-            chatHistory.innerHTML = `
-              <div class="empty-state">
-                <div>💬</div>
-                <p>No previous chats</p>
-                <p style="font-size: 12px; margin-top: 5px;">Start a new conversation!</p>
-              </div>
-            `;
-            return;
-          }
-
-          chatHistory.innerHTML = chats.map(chat => `
-            <div class="chat-history-item ${chat._id === currentSessionId ? 'active' : ''}" 
-                 onclick="loadChat('${chat._id}')">
-              <div style="font-weight: 500;">
-                ${chat.user ? chat.user.substring(0, 30) + (chat.user.length > 30 ? '...' : '') : 'New Chat'}
-              </div>
-              <div class="chat-preview">
-                ${chat.bot ? chat.bot.substring(0, 50) + (chat.bot.length > 50 ? '...' : '') : 'No response yet'}
-              </div>
-              <div class="chat-date">
-                ${new Date(chat.timestamp).toLocaleDateString()} • ${new Date(chat.timestamp).toLocaleTimeString()}
-              </div>
-            </div>
-          `).join('');
-        }
-
-        // Create new chat
-        function createNewChat() {
-          currentSessionId = null;
-          loadChatApp();
-          updateActiveChatInSidebar();
-        }
-
-        // Load specific chat
-        function loadChat(chatId) {
-          currentSessionId = chatId;
-          // In a real app, you would fetch the specific chat messages
-          // For now, we'll just update the UI and clear current messages
-          loadChatApp();
-          updateActiveChatInSidebar();
-        }
-
-        // Update active chat in sidebar
-        function updateActiveChatInSidebar() {
-          document.querySelectorAll('.chat-history-item').forEach(item => {
-            item.classList.remove('active');
-          });
-          
-          if (currentSessionId) {
-            const activeItem = document.querySelector(`[onclick="loadChat('${currentSessionId}')"]`);
-            if (activeItem) {
-              activeItem.classList.add('active');
-            }
-          }
-        }
-
-        // Load the main chat application
-        function loadChatApp() {
-          document.getElementById('chatAppContainer').innerHTML = `
-            <div class="chat-container">
-                <div class="chat-header">
-                    <h2>🤖 HealthQ AI Assistant</h2>
-                    <p>Ask me anything about health and wellness</p>
-                </div>
-                
-                <div class="chat-messages" id="chatMessages">
-                    <div class="message bot-message">
-                        ${currentSessionId ? 'Continuing previous conversation...' : `Hello ${currentUserName}! I'm HealthQ, your AI health assistant. How can I help you today? 😊`}
-                        ${!aiAvailable ? '<br><br><small>⚠️ Note: Currently using local health knowledge base.</small>' : ''}
+        <nav class="bg-white/80 backdrop-blur-lg shadow-lg relative z-10">
+            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 health-gradient rounded-full flex items-center justify-center float-animation">
+                        <i class="fas fa-heartbeat text-white"></i>
                     </div>
+                    <h1 class="text-2xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                        HealthBot
+                    </h1>
                 </div>
-                
-                <div class="typing-indicator" id="typingIndicator">
-                    HealthQ is typing...
-                </div>
-                
-                <div class="chat-input-container">
-                    <div class="chat-input-wrapper">
-                        <input 
-                            type="text" 
-                            class="chat-input" 
-                            id="userInput" 
-                            placeholder="Type your health question here..."
-                            maxlength="500"
-                        >
-                        <button class="mic-button" id="micButton" onclick="startRecording()">
-                            🎤
-                        </button>
-                        <button class="stop-button" id="stopButton" onclick="stopRecording()">
-                            ⏹️
-                        </button>
-                        <button class="send-button" onclick="sendMessage()" id="sendButton">
-                            ➤
-                        </button>
-                    </div>
-                    <div class="disclaimer">
-                        ⚠️ Remember: I'm an AI assistant, not a doctor. For serious medical concerns, please consult a healthcare professional.
-                    </div>
+                <div id="auth-buttons" class="flex space-x-3">
+                    <a href="/login" class="bg-white text-green-600 px-6 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 border border-green-200">
+                        <i class="fas fa-sign-in-alt mr-2"></i>Login
+                    </a>
+                    <a href="/register" class="health-gradient text-white px-6 py-2 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+                        <i class="fas fa-user-plus mr-2"></i>Register
+                    </a>
                 </div>
             </div>
-          `;
+        </nav>
 
-          // Initialize speech recognition
-          initSpeechRecognition();
+        <!-- Hero Section -->
+        <div class="relative z-10 container mx-auto px-6 py-20 text-center fade-in">
+            <div class="max-w-4xl mx-auto">
+                <div class="w-24 h-24 mx-auto mb-8 health-gradient rounded-full flex items-center justify-center float-animation">
+                    <i class="fas fa-heartbeat text-white text-3xl"></i>
+                </div>
+                <h2 class="text-5xl font-bold mb-6 bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                    Your AI Health Assistant
+                </h2>
+                <p class="text-xl text-gray-600 mb-8 leading-relaxed">
+                    Get personalized health advice, symptom checking, and wellness guidance 
+                    powered by advanced AI technology.
+                </p>
+                <div class="flex justify-center space-x-6">
+                    <a href="/chat" class="group health-gradient text-white px-8 py-4 rounded-full text-lg font-semibold shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:scale-110">
+                        <i class="fas fa-comments mr-3 group-hover:scale-110 transition-transform"></i>
+                        Start Chatting
+                    </a>
+                    <a href="#features" class="group border-2 border-green-500 text-green-600 px-8 py-4 rounded-full text-lg font-semibold hover:bg-green-500 hover:text-white transition-all duration-300">
+                        <i class="fas fa-star mr-3"></i>
+                        Learn More
+                    </a>
+                </div>
+            </div>
+        </div>
 
-          // Add event listeners for the new chat interface
-          setTimeout(() => {
-              const userInput = document.getElementById('userInput');
-              const sendButton = document.getElementById('sendButton');
-              
-              userInput.addEventListener('keypress', function(e) {
-                  if (e.key === 'Enter') {
-                      sendMessage();
-                  }
-              });
-              
-              userInput.focus();
-          }, 100);
-        }
-
-        // Send message to chatbot
-        async function sendMessage() {
-            const userInput = document.getElementById('userInput');
-            const sendButton = document.getElementById('sendButton');
-            const chatMessages = document.getElementById('chatMessages');
-            const typingIndicator = document.getElementById('typingIndicator');
-            
-            const message = userInput.value.trim();
-            
-            if (!message) return;
-            
-            // Add user message to chat
-            const userMessageDiv = document.createElement('div');
-            userMessageDiv.className = 'message user-message';
-            userMessageDiv.textContent = message;
-            chatMessages.appendChild(userMessageDiv);
-            
-            // Clear input and disable button
-            userInput.value = '';
-            sendButton.disabled = true;
-            
-            // Show typing indicator
-            typingIndicator.style.display = 'block';
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            
-            try {
-                const response = await fetch('/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
-                    },
-                    body: JSON.stringify({
-                        message: message,
-                        session_id: currentSessionId
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                
-                const data = await response.json();
-                
-                // Hide typing indicator
-                typingIndicator.style.display = 'none';
-                
-                // Add bot message to chat
-                const botMessageDiv = document.createElement('div');
-                botMessageDiv.className = 'message bot-message';
-                botMessageDiv.textContent = data.response;
-                chatMessages.appendChild(botMessageDiv);
-                
-                // Update session ID if provided
-                if (data.session_id) {
-                    currentSessionId = data.session_id;
-                    loadChatHistory();
-                }
-                
-            } catch (error) {
-                console.error('Error:', error);
-                typingIndicator.style.display = 'none';
-                
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'message bot-message';
-                errorDiv.textContent = 'Sorry, I encountered an error. Please try again.';
-                chatMessages.appendChild(errorDiv);
-            } finally {
-                sendButton.disabled = false;
-                userInput.focus();
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
-        }
-
-        // Handle logout
-        function handleLogout() {
-          authToken = null;
-          currentUserId = null;
-          currentUserName = null;
-          currentSessionId = null;
-          document.getElementById('authInterface').style.display = 'block';
-          document.getElementById('chatInterface').style.display = 'none';
-          hideMessages();
-          showAuthForm('login');
-        }
-
-        // Enter key support
-        document.addEventListener('DOMContentLoaded', function() {
-          // Login form enter key
-          document.getElementById('loginPassword').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-              handleLogin();
-            }
-          });
-
-          // Register form enter key
-          document.getElementById('registerPassword').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-              handleRegister();
-            }
-          });
-        });
-      </script>
+        <!-- Features Section -->
+        <div id="features" class="relative z-10 container mx-auto px-6 py-16">
+            <div class="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+                <div class="bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:transform hover:scale-105 border border-gray-100">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6 mx-auto">
+                        <i class="fas fa-brain text-green-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-center mb-4">AI Health Analysis</h3>
+                    <p class="text-gray-600 text-center">Advanced AI algorithms for personalized health insights</p>
+                </div>
+                <div class="bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:transform hover:scale-105 border border-gray-100">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6 mx-auto">
+                        <i class="fas fa-bolt text-blue-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-center mb-4">24/7 Support</h3>
+                    <p class="text-gray-600 text-center">Instant health guidance anytime you need it</p>
+                </div>
+                <div class="bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-xl hover:shadow-2xl transition-all duration-300 hover:transform hover:scale-105 border border-gray-100">
+                    <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-6 mx-auto">
+                        <i class="fas fa-shield-alt text-purple-600 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-center mb-4">Privacy First</h3>
+                    <p class="text-gray-600 text-center">Your health data is always secure and private</p>
+                </div>
+            </div>
+        </div>
     </body>
     </html>
-    """
-    return render_template_string(HTML_TEMPLATE)
+    ''',
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    'login': '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Login - HealthBot</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(30px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .fade-in-up { animation: fadeInUp 0.6s ease-out; }
+            .health-gradient { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+        </style>
+    </head>
+    <body class="min-h-screen health-gradient">
+        <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white/10 backdrop-blur-lg p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20 fade-in-up">
+                <div class="text-center mb-8">
+                    <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-heartbeat text-white text-3xl"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-white">Welcome Back</h2>
+                    <p class="text-white/80 mt-2">Sign in to HealthBot</p>
+                </div>
+                
+                <form id="loginForm" class="space-y-6">
+                    <div>
+                        <label class="block text-white text-sm font-medium mb-2">Email</label>
+                        <div class="relative">
+                            <i class="fas fa-envelope absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60"></i>
+                            <input type="email" name="email" class="w-full bg-white/20 text-white placeholder-white/60 border border-white/30 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-300" placeholder="Enter your email" required>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white text-sm font-medium mb-2">Password</label>
+                        <div class="relative">
+                            <i class="fas fa-lock absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60"></i>
+                            <input type="password" name="password" class="w-full bg-white/20 text-white placeholder-white/60 border border-white/30 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-300" placeholder="Enter your password" required>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-white text-green-600 font-semibold py-3 rounded-lg hover:bg-gray-100 transform hover:scale-105 transition-all duration-300 shadow-lg">
+                        <i class="fas fa-sign-in-alt mr-2"></i>Sign In
+                    </button>
+                </form>
+                
+                <p class="text-white text-center mt-6">
+                    Don't have an account? 
+                    <a href="/register" class="text-white font-semibold hover:underline ml-1">Create one here</a>
+                </p>
+                
+                <div id="message" class="mt-4"></div>
+            </div>
+        </div>
+
+        <script>
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const button = e.target.querySelector('button[type="submit"]');
+                const originalText = button.innerHTML;
+                
+                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing In...';
+                button.disabled = true;
+                
+                const formData = new FormData(e.target);
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(Object.fromEntries(formData))
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        localStorage.setItem('token', data.token);
+                        localStorage.setItem('user_name', data.name);
+                        // Show success animation
+                        button.innerHTML = '<i class="fas fa-check mr-2"></i>Success!';
+                        button.classList.remove('bg-white', 'text-green-600');
+                        button.classList.add('bg-green-500', 'text-white');
+                        setTimeout(() => {
+                            window.location.href = '/chat';
+                        }, 1000);
+                    } else {
+                        document.getElementById('message').innerHTML = 
+                            `<div class="bg-red-500/80 text-white p-3 rounded-lg text-center fade-in-up">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>${data.error}
+                            </div>`;
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                    }
+                } catch (error) {
+                    document.getElementById('message').innerHTML = 
+                        `<div class="bg-red-500/80 text-white p-3 rounded-lg text-center fade-in-up">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>Network error
+                        </div>`;
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }
+            });
+        </script>
+    </body>
+    </html>
+    ''',
+
+    'register': '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Register - HealthBot</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            @keyframes fadeInUp {
+                from { opacity: 0; transform: translateY(30px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .fade-in-up { animation: fadeInUp 0.6s ease-out; }
+            .health-gradient { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+        </style>
+    </head>
+    <body class="min-h-screen health-gradient">
+        <div class="min-h-screen flex items-center justify-center p-4">
+            <div class="bg-white/10 backdrop-blur-lg p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/20 fade-in-up">
+                <div class="text-center mb-8">
+                    <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-user-plus text-white text-3xl"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-white">Join HealthBot</h2>
+                    <p class="text-white/80 mt-2">Create your health assistant account</p>
+                </div>
+                
+                <form id="registerForm" class="space-y-6">
+                    <div>
+                        <label class="block text-white text-sm font-medium mb-2">Full Name</label>
+                        <div class="relative">
+                            <i class="fas fa-user absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60"></i>
+                            <input type="text" name="name" class="w-full bg-white/20 text-white placeholder-white/60 border border-white/30 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-300" placeholder="Enter your full name" required>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white text-sm font-medium mb-2">Email</label>
+                        <div class="relative">
+                            <i class="fas fa-envelope absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60"></i>
+                            <input type="email" name="email" class="w-full bg-white/20 text-white placeholder-white/60 border border-white/30 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-300" placeholder="Enter your email" required>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-white text-sm font-medium mb-2">Password</label>
+                        <div class="relative">
+                            <i class="fas fa-lock absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60"></i>
+                            <input type="password" name="password" class="w-full bg-white/20 text-white placeholder-white/60 border border-white/30 rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-300" placeholder="Create a password" required>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="w-full health-gradient text-white font-semibold py-3 rounded-lg hover:opacity-90 transform hover:scale-105 transition-all duration-300 shadow-lg">
+                        <i class="fas fa-user-plus mr-2"></i>Create Account
+                    </button>
+                </form>
+                
+                <p class="text-white text-center mt-6">
+                    Already have an account? 
+                    <a href="/login" class="text-white font-semibold hover:underline ml-1">Sign in here</a>
+                </p>
+                
+                <div id="message" class="mt-4"></div>
+            </div>
+        </div>
+
+        <script>
+            document.getElementById('registerForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const button = e.target.querySelector('button[type="submit"]');
+                const originalText = button.innerHTML;
+                
+                button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating Account...';
+                button.disabled = true;
+                
+                const formData = new FormData(e.target);
+                try {
+                    const response = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(Object.fromEntries(formData))
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        localStorage.setItem('token', data.token);
+                        // Show success animation
+                        button.innerHTML = '<i class="fas fa-check mr-2"></i>Account Created!';
+                        button.classList.add('bg-green-500', 'text-white');
+                        setTimeout(() => {
+                            window.location.href = '/chat';
+                        }, 1000);
+                    } else {
+                        document.getElementById('message').innerHTML = 
+                            `<div class="bg-red-500/80 text-white p-3 rounded-lg text-center fade-in-up">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>${data.error}
+                            </div>`;
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                    }
+                } catch (error) {
+                    document.getElementById('message').innerHTML = 
+                        `<div class="bg-red-500/80 text-white p-3 rounded-lg text-center fade-in-up">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>Network error
+                        </div>`;
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }
+            });
+        </script>
+    </body>
+    </html>
+    ''',
+
+    'chat': '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Chat - HealthBot</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            @keyframes slideInUp {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes bounceIn {
+                0% { transform: scale(0.3); opacity: 0; }
+                50% { transform: scale(1.05); }
+                70% { transform: scale(0.9); }
+                100% { transform: scale(1); opacity: 1; }
+            }
+            .slide-in-up { animation: slideInUp 0.3s ease-out; }
+            .bounce-in { animation: bounceIn 0.6s ease-out; }
+            .chat-bubble-user { 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-bottom-right-radius: 4px;
+            }
+            .chat-bubble-bot { 
+                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                border-bottom-left-radius: 4px;
+            }
+            .typing-indicator {
+                display: inline-flex;
+                align-items: center;
+                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                padding: 12px 16px;
+                border-radius: 18px;
+                border-bottom-left-radius: 4px;
+            }
+            .typing-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background-color: rgba(255, 255, 255, 0.7);
+                margin: 0 2px;
+                animation: typing 1.4s infinite ease-in-out;
+            }
+            .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+            .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+            @keyframes typing {
+                0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
+                40% { transform: scale(1); opacity: 1; }
+            }
+            .message-enter {
+                animation: slideInUp 0.3s ease-out;
+            }
+            .health-gradient { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+            .glass-effect { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); }
+            .disclaimer {
+                background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+                color: white;
+                padding: 12px 16px;
+                border-radius: 12px;
+                margin: 10px 0;
+                font-size: 0.9em;
+                border-left: 4px solid #ff3838;
+            }
+            .chat-history-item {
+                transition: all 0.3s ease;
+                cursor: pointer;
+            }
+            .chat-history-item:hover {
+                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                color: white;
+                transform: translateX(5px);
+            }
+            .active-chat {
+                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                color: white;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-100 min-h-screen">
+        <!-- Animated Background -->
+        <div class="fixed inset-0 health-gradient opacity-10 z-0"></div>
+        
+        <nav class="bg-white/80 backdrop-blur-lg shadow-lg relative z-10">
+            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 health-gradient rounded-full flex items-center justify-center">
+                        <i class="fas fa-heartbeat text-white"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                        HealthBot
+                    </h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span id="user-info" class="text-gray-700 font-medium">
+                        <i class="fas fa-user mr-2"></i>Welcome!
+                    </span>
+                    <a href="/profile" class="text-green-600 hover:text-green-800 transition-colors">
+                        <i class="fas fa-user-cog mr-1"></i>Profile
+                    </a>
+                    <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Chat Container -->
+        <div class="container mx-auto px-4 py-8 max-w-6xl relative z-10">
+            <div class="flex gap-6">
+                <!-- Chat History Sidebar -->
+                <div class="w-80 bg-white rounded-2xl shadow-2xl overflow-hidden glass-effect border border-white/20 h-[600px]">
+                    <div class="health-gradient p-4 text-white">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-bold">Chat History</h3>
+                            <button onclick="startNewChat()" class="bg-white text-green-600 px-3 py-1 rounded-lg text-sm hover:bg-gray-100 transition-colors">
+                                <i class="fas fa-plus mr-1"></i>New
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-4 h-[520px] overflow-y-auto">
+                        <div id="chat-history" class="space-y-2">
+                            <!-- Chat history will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Container -->
+                <div class="flex-1 bg-white rounded-2xl shadow-2xl overflow-hidden glass-effect border border-white/20">
+                    <!-- Chat Header -->
+                    <div class="health-gradient p-6 text-white">
+                        <div class="flex items-center space-x-4">
+                            <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
+                                <i class="fas fa-heartbeat text-2xl"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-bold">Health Assistant</h2>
+                                <p class="text-green-100">Ready to help with your health questions!</p>
+                            </div>
+                        </div>
+                        <!-- Medical Disclaimer -->
+                        <div class="disclaimer mt-4 text-sm">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>
+                            <strong>Important:</strong> I am an AI assistant. For medical concerns, always consult a healthcare professional.
+                        </div>
+                    </div>
+
+                    <!-- Chat Messages -->
+                    <div id="chat-messages" class="h-96 overflow-y-auto p-6 bg-gray-50/50">
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fas fa-comments text-4xl mb-4 opacity-50"></i>
+                            <p class="text-lg">Start a conversation with your health assistant</p>
+                            <p class="text-sm text-gray-400 mt-2">Ask about symptoms, health advice, or general wellness</p>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="p-4 bg-gray-100 border-t border-gray-200">
+                        <div class="flex flex-wrap justify-center gap-2">
+                            <button onclick="addQuickMessage('What are common cold symptoms?')" 
+                                    class="bg-white text-gray-700 px-4 py-2 rounded-full text-sm hover:bg-green-50 hover:text-green-600 transition-all duration-300 border border-gray-200 hover:border-green-300 shadow-sm">
+                                🤒 Cold Symptoms
+                            </button>
+                            <button onclick="addQuickMessage('How to improve sleep quality?')" 
+                                    class="bg-white text-gray-700 px-4 py-2 rounded-full text-sm hover:bg-blue-50 hover:text-blue-600 transition-all duration-300 border border-gray-200 hover:border-blue-300 shadow-sm">
+                                😴 Sleep Tips
+                            </button>
+                            <button onclick="addQuickMessage('Healthy diet recommendations')" 
+                                    class="bg-white text-gray-700 px-4 py-2 rounded-full text-sm hover:bg-yellow-50 hover:text-yellow-600 transition-all duration-300 border border-gray-200 hover:border-yellow-300 shadow-sm">
+                                🥗 Diet Advice
+                            </button>
+                            <button onclick="addQuickMessage('Exercise and fitness tips')" 
+                                    class="bg-white text-gray-700 px-4 py-2 rounded-full text-sm hover:bg-purple-50 hover:text-purple-600 transition-all duration-300 border border-gray-200 hover:border-purple-300 shadow-sm">
+                                💪 Fitness Tips
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input -->
+                    <div class="p-6 bg-white border-t border-gray-200">
+                        <div class="flex space-x-4">
+                            <input type="text" id="message-input" 
+                                   class="flex-1 p-4 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300 shadow-lg"
+                                   placeholder="Ask about symptoms, health advice, or general wellness..." 
+                                   onkeypress="handleKeyPress(event)">
+                            <button onclick="sendMessage()" id="send-button"
+                                    class="health-gradient text-white px-8 py-4 rounded-2xl hover:opacity-90 transform hover:scale-105 transition-all duration-300 shadow-lg font-semibold">
+                                <i class="fas fa-paper-plane mr-2"></i>Send
+                            </button>
+                            <button onclick="toggleVoice()" id="voice-button"
+                                    class="bg-blue-500 text-white px-4 py-4 rounded-2xl hover:bg-blue-600 transform hover:scale-105 transition-all duration-300 shadow-lg">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                            <button onclick="stopResponse()" id="stop-button" style="display: none;"
+                                    class="bg-red-500 text-white px-4 py-4 rounded-2xl hover:bg-red-600 transform hover:scale-105 transition-all duration-300 shadow-lg">
+                                <i class="fas fa-stop"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+            }
+
+            // Display user info
+            const userName = localStorage.getItem('user_name') || 'User';
+            document.getElementById('user-info').innerHTML = `<i class="fas fa-user mr-2"></i>${userName}`;
+
+            let isTyping = false;
+            let currentSpeech = null;
+            let isVoiceEnabled = false;
+            let stopResponseRequested = false;
+            let currentSessionId = null;
+            let chatHistory = [];
+
+            // Load chat history on page load
+            document.addEventListener('DOMContentLoaded', function() {
+                loadChatHistory();
+                loadCurrentChat();
+            });
+
+            async function loadChatHistory() {
+                try {
+                    const response = await fetch('/api/chat/history?days=30', {
+                        headers: {'Authorization': 'Bearer ' + token}
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        chatHistory = data.sessions;
+                        displayChatHistory();
+                    }
+                } catch (error) {
+                    console.error('Error loading chat history:', error);
+                }
+            }
+
+            function displayChatHistory() {
+                const historyContainer = document.getElementById('chat-history');
+                historyContainer.innerHTML = '';
+
+                // Group sessions by date
+                const sessionsByDate = {};
+                chatHistory.forEach(session => {
+                    const date = new Date(session.date).toLocaleDateString();
+                    if (!sessionsByDate[date]) {
+                        sessionsByDate[date] = [];
+                    }
+                    sessionsByDate[date].push(session);
+                });
+
+                // Display sessions grouped by date
+                Object.keys(sessionsByDate).forEach(date => {
+                    const dateHeader = document.createElement('div');
+                    dateHeader.className = 'text-sm font-semibold text-gray-500 mb-2 mt-4 first:mt-0';
+                    dateHeader.textContent = date;
+                    historyContainer.appendChild(dateHeader);
+
+                    sessionsByDate[date].forEach(session => {
+                        const sessionElement = document.createElement('div');
+                        sessionElement.className = `chat-history-item p-3 rounded-lg border border-gray-200 ${
+                            session.session_id === currentSessionId ? 'active-chat' : 'bg-gray-50'
+                        }`;
+                        sessionElement.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <div class="flex-1">
+                                    <div class="font-medium text-sm">${session.preview || 'New conversation'}</div>
+                                    <div class="text-xs text-gray-500 mt-1">${session.message_count} messages</div>
+                                </div>
+                                <div class="text-xs text-gray-400">${new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                            </div>
+                        `;
+                        sessionElement.onclick = () => loadChatSession(session.session_id);
+                        historyContainer.appendChild(sessionElement);
+                    });
+                });
+            }
+
+            async function loadChatSession(sessionId) {
+                try {
+                    const response = await fetch(`/api/chat/session/${sessionId}`, {
+                        headers: {'Authorization': 'Bearer ' + token}
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        currentSessionId = sessionId;
+                        displayChatMessages(data.messages);
+                        displayChatHistory(); // Update active chat highlight
+                    }
+                } catch (error) {
+                    console.error('Error loading chat session:', error);
+                }
+            }
+
+            async function loadCurrentChat() {
+                try {
+                    const response = await fetch('/api/chat/current', {
+                        headers: {'Authorization': 'Bearer ' + token}
+                    });
+                    const data = await response.json();
+                    
+                    if (response.ok && data.session_id) {
+                        currentSessionId = data.session_id;
+                        if (data.messages && data.messages.length > 0) {
+                            displayChatMessages(data.messages);
+                        }
+                        displayChatHistory(); // Update active chat highlight
+                    }
+                } catch (error) {
+                    console.error('Error loading current chat:', error);
+                }
+            }
+
+            function displayChatMessages(messages) {
+                const chatContainer = document.getElementById('chat-messages');
+                chatContainer.innerHTML = '';
+
+                if (messages.length === 0) {
+                    chatContainer.innerHTML = `
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fas fa-comments text-4xl mb-4 opacity-50"></i>
+                            <p class="text-lg">Start a conversation with your health assistant</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                messages.forEach(message => {
+                    addMessageToDisplay(message.sender, message.text, message.timestamp, false);
+                });
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            function startNewChat() {
+                currentSessionId = null;
+                document.getElementById('chat-messages').innerHTML = `
+                    <div class="text-center text-gray-500 py-8">
+                        <i class="fas fa-comments text-4xl mb-4 opacity-50"></i>
+                        <p class="text-lg">Start a new conversation with your health assistant</p>
+                    </div>
+                `;
+                document.getElementById('message-input').value = '';
+                displayChatHistory(); // Update active chat highlight
+            }
+
+            function handleKeyPress(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            }
+
+            function addQuickMessage(message) {
+                document.getElementById('message-input').value = message;
+                sendMessage();
+            }
+
+            function toggleVoice() {
+                isVoiceEnabled = !isVoiceEnabled;
+                const voiceButton = document.getElementById('voice-button');
+                if (isVoiceEnabled) {
+                    voiceButton.innerHTML = '<i class="fas fa-microphone-slash"></i>';
+                    voiceButton.classList.remove('bg-blue-500');
+                    voiceButton.classList.add('bg-purple-500');
+                    speakText('Voice mode activated');
+                } else {
+                    voiceButton.innerHTML = '<i class="fas fa-microphone"></i>';
+                    voiceButton.classList.remove('bg-purple-500');
+                    voiceButton.classList.add('bg-blue-500');
+                    if (currentSpeech) {
+                        currentSpeech.cancel();
+                    }
+                }
+            }
+
+            function stopResponse() {
+                stopResponseRequested = true;
+                if (currentSpeech) {
+                    currentSpeech.cancel();
+                }
+                hideTypingIndicator();
+                isTyping = false;
+                document.getElementById('stop-button').style.display = 'none';
+                document.getElementById('send-button').style.display = 'block';
+            }
+
+            function speakText(text) {
+                if (!isVoiceEnabled) return;
+                
+                if ('speechSynthesis' in window) {
+                    if (currentSpeech) {
+                        currentSpeech.cancel();
+                    }
+                    
+                    const speech = new SpeechSynthesisUtterance(text);
+                    speech.rate = 0.8;
+                    speech.pitch = 1;
+                    speech.volume = 1;
+                    
+                    currentSpeech = speech;
+                    window.speechSynthesis.speak(speech);
+                    
+                    speech.onend = function() {
+                        currentSpeech = null;
+                    };
+                }
+            }
+
+            async function sendMessage() {
+                const input = document.getElementById('message-input');
+                const message = input.value.trim();
+                if (!message || isTyping) return;
+
+                // Add user message
+                addMessageToDisplay('user', message, new Date().toISOString(), true);
+                input.value = '';
+                
+                // Show typing indicator and stop button
+                showTypingIndicator();
+                isTyping = true;
+                stopResponseRequested = false;
+                document.getElementById('stop-button').style.display = 'block';
+                document.getElementById('send-button').style.display = 'none';
+
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + token
+                        },
+                        body: JSON.stringify({
+                            message: message,
+                            session_id: currentSessionId
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    hideTypingIndicator();
+                    isTyping = false;
+                    document.getElementById('stop-button').style.display = 'none';
+                    document.getElementById('send-button').style.display = 'block';
+                    
+                    if (response.ok && !stopResponseRequested) {
+                        currentSessionId = data.session_id;
+                        addMessageToDisplay('bot', data.response, new Date().toISOString(), true);
+                        
+                        // Reload chat history to show updated session
+                        loadChatHistory();
+                        
+                        // Speak the response if voice is enabled
+                        if (isVoiceEnabled) {
+                            speakText(data.response);
+                        }
+                    } else if (!response.ok) {
+                        addMessageToDisplay('bot', 'Sorry, I encountered an error. Please try again.', new Date().toISOString(), true);
+                    }
+                } catch (error) {
+                    hideTypingIndicator();
+                    isTyping = false;
+                    document.getElementById('stop-button').style.display = 'none';
+                    document.getElementById('send-button').style.display = 'block';
+                    addMessageToDisplay('bot', 'Network error. Please check your connection.', new Date().toISOString(), true);
+                }
+            }
+
+            function addMessageToDisplay(sender, text, timestamp, animate = true) {
+                const chat = document.getElementById('chat-messages');
+                
+                // Remove welcome message if it's the first real message
+                if (chat.children.length === 1 && chat.children[0].classList.contains('text-center')) {
+                    chat.innerHTML = '';
+                }
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `mb-4 ${animate ? 'message-enter' : ''} ${sender === 'user' ? 'text-right' : 'text-left'}`;
+                
+                const time = new Date(timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                
+                messageDiv.innerHTML = `
+                    <div class="inline-block max-w-xs lg:max-w-md px-4 py-3 rounded-2xl text-white shadow-lg ${
+                        sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-bot'
+                    }">
+                        ${text}
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1 ${sender === 'user' ? 'text-right' : 'text-left'}">
+                        ${time}
+                    </div>
+                `;
+                
+                chat.appendChild(messageDiv);
+                chat.scrollTop = chat.scrollHeight;
+            }
+
+            function showTypingIndicator() {
+                const chat = document.getElementById('chat-messages');
+                const typingDiv = document.createElement('div');
+                typingDiv.id = 'typing-indicator';
+                typingDiv.className = 'mb-4 message-enter';
+                typingDiv.innerHTML = `
+                    <div class="typing-indicator">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                `;
+                chat.appendChild(typingDiv);
+                chat.scrollTop = chat.scrollHeight;
+            }
+
+            function hideTypingIndicator() {
+                const typingIndicator = document.getElementById('typing-indicator');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+            }
+
+            function logout() {
+                if (currentSpeech) {
+                    currentSpeech.cancel();
+                }
+                localStorage.clear();
+                window.location.href = '/';
+            }
+        </script>
+    </body>
+    </html>
+    ''',
+
+    'profile': '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Profile - HealthBot</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+        <style>
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .fade-in { animation: fadeIn 0.6s ease-out; }
+            .health-gradient { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+            .glass-effect { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); }
+        </style>
+    </head>
+    <body class="min-h-screen health-gradient">
+        <nav class="bg-white/80 backdrop-blur-lg shadow-lg">
+            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 health-gradient rounded-full flex items-center justify-center">
+                        <i class="fas fa-heartbeat text-white"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                        HealthBot
+                    </h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/chat" class="text-green-600 hover:text-green-800 transition-colors">
+                        <i class="fas fa-comments mr-1"></i>Chat
+                    </a>
+                    <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container mx-auto px-4 py-8 max-w-2xl">
+            <div class="glass-effect rounded-2xl shadow-2xl p-8 border border-white/20 fade-in">
+                <div class="text-center mb-8">
+                    <div class="w-24 h-24 health-gradient rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-user text-white text-3xl"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-white">User Profile</h2>
+                    <p class="text-white/80 mt-2">Manage your health assistant account</p>
+                </div>
+
+                <div id="profile-data" class="space-y-6">
+                    <div class="bg-white/10 rounded-xl p-6 border border-white/20">
+                        <div class="flex justify-between items-center border-b border-white/20 pb-4 mb-4">
+                            <span class="font-semibold text-white text-lg">Name:</span>
+                            <span id="user-name" class="text-white/90 text-lg">Loading...</span>
+                        </div>
+                        <div class="flex justify-between items-center border-b border-white/20 pb-4 mb-4">
+                            <span class="font-semibold text-white text-lg">Email:</span>
+                            <span id="user-email" class="text-white/90 text-lg">Loading...</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-semibold text-white text-lg">Member Since:</span>
+                            <span id="user-created" class="text-white/90 text-lg">Loading...</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-white/10 rounded-xl p-6 border border-white/20">
+                        <h3 class="text-xl font-bold text-white mb-4">Health Statistics</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-white" id="conversation-count">0</div>
+                                <div class="text-white/70 text-sm">Health Conversations</div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-2xl font-bold text-white" id="messages-count">0</div>
+                                <div class="text-white/70 text-sm">Total Messages</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const token = localStorage.getItem('token');
+            if (!token) window.location.href = '/login';
+            
+            async function loadProfile() {
+                try {
+                    const response = await fetch('/api/user/profile', {
+                        headers: {'Authorization': 'Bearer ' + token}
+                    });
+                    const data = await response.json();
+                    if (response.ok) {
+                        document.getElementById('user-name').textContent = data.user.name;
+                        document.getElementById('user-email').textContent = data.user.email;
+                        document.getElementById('user-created').textContent = new Date(data.user.created_at).toLocaleDateString();
+                        
+                        // Load conversation stats
+                        const convResponse = await fetch('/api/conversations?limit=100', {
+                            headers: {'Authorization': 'Bearer ' + token}
+                        });
+                        const convData = await convResponse.json();
+                        if (convResponse.ok) {
+                            document.getElementById('conversation-count').textContent = convData.conversations.length;
+                            const totalMessages = convData.conversations.reduce((acc, conv) => acc + 2, 0);
+                            document.getElementById('messages-count').textContent = totalMessages;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error loading profile:', error);
+                }
+            }
+            
+            function logout() {
+                localStorage.clear();
+                window.location.href = '/';
+            }
+            
+            loadProfile();
+        </script>
+    </body>
+    </html>
+    '''
+}
+
+# Frontend Routes
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATES['index'])
+
+@app.route('/login')
+def login_page():
+    return render_template_string(HTML_TEMPLATES['login'])
+
+@app.route('/register')
+def register_page():
+    return render_template_string(HTML_TEMPLATES['register'])
+
+@app.route('/chat')
+def chat_page():
+    return render_template_string(HTML_TEMPLATES['chat'])
+
+@app.route('/profile')
+def profile_page():
+    return render_template_string(HTML_TEMPLATES['profile'])
+
+# Backend API Routes
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    if db is None:
+        return jsonify({"error": "Database connection unavailable"}), 503
+        
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        
+        if db.users.find_one({"email": email}):
+            return jsonify({"error": "User already exists"}), 400
+        
+        hashed_password = hashpw(password.encode('utf-8'), gensalt())
+        user_data = {
+            "user_id": str(uuid.uuid4()),
+            "email": email,
+            "password": hashed_password.decode('utf-8'),
+            "name": name,
+            "created_at": datetime.utcnow(),
+        }
+        
+        db.users.insert_one(user_data)
+        
+        token = jwt.encode({
+            'user_id': user_data['user_id'],
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }, os.getenv('JWT_SECRET', 'secret'), algorithm="HS256")
+        
+        send_kafka_message('user_events', {
+            'event_type': 'user_registered',
+            'user_id': user_data['user_id'],
+            'email': email,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+        return jsonify({
+            "message": "User registered successfully",
+            "token": token,
+            "user_id": user_data['user_id'],
+            "name": name
+        }), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    if db is None:
+        return jsonify({"error": "Database connection unavailable"}), 503
+        
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        
+        user = db.users.find_one({"email": email})
+        if not user or not checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        token = jwt.encode({
+            'user_id': user['user_id'],
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }, os.getenv('JWT_SECRET', 'secret'), algorithm="HS256")
+        
+        send_kafka_message('user_events', {
+            'event_type': 'user_logged_in',
+            'user_id': user['user_id'],
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+        return jsonify({
+            "message": "Login successful",
+            "token": token,
+            "user_id": user['user_id'],
+            "name": user.get('name')
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/chat', methods=['POST'])
+@token_required
+def chat():
+    if cohere_client is None:
+        return jsonify({"error": "AI service unavailable"}), 503
+        
+    try:
+        data = request.json
+        user_message = data.get('message', '').strip()
+        session_id = data.get('session_id')
+        
+        if not user_message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        # Get or create session
+        if not session_id:
+            session_id = get_current_session(request.current_user['user_id'])
+        
+        # Enhanced prompt with medical safety
+        health_prompt = HEALTH_PROMPT_TEMPLATE.format(user_message=user_message)
+        
+        try:
+            response = cohere_client.generate(
+                model='command',
+                prompt=health_prompt,
+                max_tokens=200,
+                temperature=0.7,
+                stop_sequences=["\n\n"]
+            )
+            
+            bot_response = response.generations[0].text.strip()
+            
+            # Add disclaimer for medical topics
+            medical_keywords = ['symptom', 'pain', 'fever', 'headache', 'cough', 'cold', 'flu', 'disease', 'condition', 'diagnose', 'treatment', 'medicine', 'drug', 'pill']
+            if any(keyword in user_message.lower() for keyword in medical_keywords):
+                bot_response += f"\n\n{MEDICAL_DISCLAIMER}"
+            
+        except Exception as ai_error:
+            print(f"Cohere API error: {ai_error}")
+            bot_response = "I'm currently having trouble accessing health information. Please try again in a moment. For urgent medical concerns, please contact a healthcare provider directly."
+        
+        # Save conversation
+        conversation_data = {
+            'conversation_id': str(uuid.uuid4()),
+            'session_id': session_id,
+            'user_id': request.current_user['user_id'],
+            'user_message': user_message,
+            'bot_response': bot_response,
+            'timestamp': datetime.utcnow()
+        }
+        
+        if db:
+            db.conversations.insert_one(conversation_data)
+            
+            # Update session message count
+            db.chat_sessions.update_one(
+                {"session_id": session_id},
+                {"$inc": {"message_count": 1}},
+                upsert=True
+            )
+        
+        # Send to Kafka if enabled
+        send_kafka_message('chat_messages', {
+            'conversation_id': conversation_data['conversation_id'],
+            'user_id': request.current_user['user_id'],
+            'user_message': user_message,
+            'bot_response': bot_response,
+            'timestamp': conversation_data['timestamp'].isoformat()
+        })
+        
+        return jsonify({
+            "response": bot_response,
+            "conversation_id": conversation_data['conversation_id'],
+            "session_id": session_id
+        })
+        
+    except Exception as e:
+        print(f"Chat API error: {e}")
+        return jsonify({"error": "Sorry, I'm having trouble processing your request. Please try again."}), 500
+
+@app.route('/api/chat/history', methods=['GET'])
+@token_required
+def get_chat_history():
+    try:
+        days = int(request.args.get('days', 30))
+        since_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get unique sessions with their messages
+        pipeline = [
+            {"$match": {
+                "user_id": request.current_user['user_id'],
+                "timestamp": {"$gte": since_date}
+            }},
+            {"$group": {
+                "_id": "$session_id",
+                "last_message": {"$last": "$$ROOT"},
+                "message_count": {"$sum": 1},
+                "first_timestamp": {"$min": "$timestamp"}
+            }},
+            {"$sort": {"first_timestamp": -1}},
+            {"$project": {
+                "session_id": "$_id",
+                "preview": {"$substr": ["$last_message.user_message", 0, 50]},
+                "message_count": 1,
+                "date": "$first_timestamp",
+                "_id": 0
+            }}
+        ]
+        
+        sessions = list(db.conversations.aggregate(pipeline))
+        
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/chat/session/<session_id>', methods=['GET'])
+@token_required
+def get_chat_session(session_id):
+    try:
+        conversations = list(db.conversations.find(
+            {
+                'user_id': request.current_user['user_id'],
+                'session_id': session_id
+            },
+            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1}
+        ).sort('timestamp', 1))
+        
+        # Format messages for display
+        messages = []
+        for conv in conversations:
+            messages.append({
+                'sender': 'user',
+                'text': conv['user_message'],
+                'timestamp': conv['timestamp']
+            })
+            messages.append({
+                'sender': 'bot',
+                'text': conv['bot_response'],
+                'timestamp': conv['timestamp']
+            })
+        
+        return jsonify({"messages": messages, "session_id": session_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/chat/current', methods=['GET'])
+@token_required
+def get_current_chat():
+    try:
+        session_id = get_current_session(request.current_user['user_id'])
+        
+        # Get today's messages
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        conversations = list(db.conversations.find(
+            {
+                'user_id': request.current_user['user_id'],
+                'session_id': session_id,
+                'timestamp': {"$gte": today_start}
+            },
+            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1}
+        ).sort('timestamp', 1))
+        
+        # Format messages for display
+        messages = []
+        for conv in conversations:
+            messages.append({
+                'sender': 'user',
+                'text': conv['user_message'],
+                'timestamp': conv['timestamp']
+            })
+            messages.append({
+                'sender': 'bot',
+                'text': conv['bot_response'],
+                'timestamp': conv['timestamp']
+            })
+        
+        return jsonify({"messages": messages, "session_id": session_id})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/conversations', methods=['GET'])
+@token_required
+def get_conversations():
+    try:
+        limit = int(request.args.get('limit', 10))
+        skip = int(request.args.get('skip', 0))
+        
+        conversations = list(db.conversations.find(
+            {'user_id': request.current_user['user_id']},
+            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1, 'conversation_id': 1}
+        ).sort('timestamp', -1).skip(skip).limit(limit))
+        
+        return jsonify({"conversations": conversations})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/user/profile', methods=['GET'])
+@token_required
+def get_profile():
+    try:
+        user_data = db.users.find_one(
+            {"user_id": request.current_user['user_id']},
+            {'_id': 0, 'password': 0}
+        )
+        return jsonify({"user": user_data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": {
+            "mongodb": "connected" if db else "disconnected",
+            "cohere_api": "available" if cohere_client else "unavailable",
+            "kafka": "connected" if KAFKA_ENABLED else "disabled"
+        },
+        "version": "3.0.0"
+    }
+    return jsonify(status)
+
+if __name__ == '__main__':
+    print("🚀 Starting HealthBot - AI Health Assistant...")
+    print("📊 MongoDB: Connected")
+    print("🤖 Cohere AI: Available")
+    print("📨 Kafka:", "Enabled" if KAFKA_ENABLED else "Disabled")
+    print("🎤 Voice Features: Enabled")
+    print("⏹️  Stop Button: Enabled")
+    print("🔐 Authentication: JWT Enabled")
+    print("💾 Database: MongoDB Atlas")
+    print("📅 Chat History: 30 days retention")
+    print("🆕 New Chat Sessions: Daily auto-creation")
+    print("🌐 Live at: http://localhost:5000")
+    app.run(debug=True, host='0.0.0.0', port=5000)
