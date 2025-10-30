@@ -1,4 +1,4 @@
-🤖 HealthBot - AI Health Assistant
+# 🤖 HealthBot - AI Health Assistant
 HealthBot is an advanced AI-powered health assistant built with Flask, Cohere AI, and MongoDB that provides intelligent health conversations with proper medical safety features.
 
 ✨ Features
