@@ -5,15 +5,44 @@ on:
     branches: [ master ]
 
 jobs:
-  validate:
+  smart-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 2
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Validate files
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Install only core deps
       run: |
-        echo "✅ HealthBot CI/CD - Basic Validation"
-        echo "📁 Files checked successfully!"
+        pip install flask python-dotenv colorama
+        echo "✅ Core dependencies installed"
+
+    - name: Validate Python syntax
+      run: |
+        echo "🔍 Checking Python syntax..."
+        python -m py_compile app.py
+        python -m py_compile health_alerts.py
+        python -m py_compile kafka_service.py
+        echo "✅ All Python files have valid syntax!"
+
+    - name: Test basic imports
+      run: |
+        echo "📦 Testing imports..."
+        python -c "import flask; print('✅ Flask OK')"
+        python -c "from dotenv import load_dotenv; print('✅ dotenv OK')"
+        python -c "import colorama; print('✅ Colorama OK')"
+        echo "✅ All core imports work!"
+
+    - name: HealthBot Ready
+      run: |
+        echo "🎉 HEALTHBOT VALIDATION PASSED!"
+        echo "✅ Code syntax: Valid"
+        echo "✅ Core imports: Working"
+        echo "✅ Dependencies: Installed"
+        echo "🚀 Ready for development!"
