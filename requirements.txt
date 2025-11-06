@@ -4,3 +4,4 @@ flask
 colorama
 gunicorn 
 PyJWT 
+pymongo 
