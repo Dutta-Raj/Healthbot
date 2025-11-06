@@ -6,3 +6,8 @@ gunicorn
 PyJWT 
 pymongo 
 bcrypt 
+requests 
+kafka-python 
+numpy 
+pandas 
+bcrypt 
