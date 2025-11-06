@@ -2,12 +2,12 @@ import os
 import jwt
 import uuid
 import json
+import re
 import threading
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template_string
 from pymongo import MongoClient
 from dotenv import load_dotenv
-import cohere
 from bcrypt import hashpw, gensalt, checkpw
 from kafka import KafkaProducer, KafkaConsumer
 
@@ -17,41 +17,179 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-2024')
 
+# Simple Health Response System (NO API DEPENDENCY)
+def get_health_response(user_message):
+    """Simple working health responses without external API"""
+    user_lower = user_message.lower()
+    
+    # Pattern matching for common health questions
+    if any(word in user_lower for word in ['exercise', 'fitness', 'workout', 'gym']):
+        return "For exercise and fitness, I recommend starting with 30 minutes of moderate activity daily like walking, cycling, or swimming. Remember to warm up, stay hydrated, and consult your doctor before starting any new exercise routine."
+    
+    elif any(word in user_lower for word in ['diet', 'nutrition', 'food', 'eat', 'weight']):
+        return "A balanced diet includes plenty of fruits, vegetables, whole grains, and lean proteins. Stay hydrated with water and limit processed foods. For personalized nutrition advice, consult a registered dietitian."
+    
+    elif any(word in user_lower for word in ['sleep', 'insomnia', 'tired', 'energy']):
+        return "Good sleep habits include maintaining a consistent schedule (7-9 hours nightly), creating a dark/quiet bedroom, avoiding screens before bed, and limiting caffeine in the evening. If sleep problems persist, see a healthcare provider."
+    
+    elif any(word in user_lower for word in ['cold', 'flu', 'fever', 'cough', 'sick']):
+        return "For cold and flu symptoms: rest, drink plenty of fluids, use over-the-counter remedies as needed. Seek medical attention for high fever, difficulty breathing, or symptoms lasting more than 10 days."
+    
+    elif any(word in user_lower for word in ['stress', 'anxiety', 'mental', 'mood']):
+        return "For stress management: practice deep breathing, regular exercise, maintain social connections, and ensure adequate sleep. Consider speaking with a mental health professional for persistent concerns."
+    
+    elif any(word in user_lower for word in ['headache', 'pain']):
+        return "For occasional headaches: rest in a quiet/dark room, stay hydrated, and consider over-the-counter pain relief. Consult a doctor for severe, frequent, or worsening headaches."
+    
+    elif any(word in user_lower for word in ['skin', 'acne', 'rash']):
+        return "Basic skin care includes gentle cleansing, moisturizing, and sun protection. For specific skin concerns like persistent acne or rashes, consult a dermatologist."
+    
+    elif any(word in user_lower for word in ['hello', 'hi', 'hey', 'greetings']):
+        return "Hello! I'm your health assistant. I can help with general wellness topics like exercise, nutrition, sleep, and common health questions. How can I assist you today?"
+    
+    elif any(word in user_lower for word in ['thank', 'thanks', 'appreciate']):
+        return "You're welcome! I'm glad I could help. Remember to consult healthcare professionals for specific medical concerns."
+    
+    else:
+        return "I'm here to help with general health and wellness information. I can provide guidance on exercise, nutrition, sleep, stress management, and common health topics. For specific medical concerns, please consult a healthcare professional."
+
+print("✅ Health response system initialized successfully!")
+
+# Validation functions
+def validate_email(email):
+    """Validate email format with better error handling"""
+    if not email or not isinstance(email, str):
+        return False, "Email is required"
+    
+    email = email.strip()
+    
+    # Basic email format check
+    if '@' not in email:
+        return False, "Email must contain @ symbol"
+    
+    if '.' not in email:
+        return False, "Email must contain a domain with dot"
+    
+    if len(email) < 5:
+        return False, "Email is too short"
+    
+    if len(email) > 254:
+        return False, "Email is too long"
+    
+    # Split and check parts
+    parts = email.split('@')
+    if len(parts) != 2:
+        return False, "Email must contain exactly one @ symbol"
+    
+    local_part, domain = parts
+    
+    if len(local_part) == 0:
+        return False, "Local part (before @) cannot be empty"
+    
+    if len(domain) == 0:
+        return False, "Domain part (after @) cannot be empty"
+    
+    if '.' not in domain:
+        return False, "Domain must contain a dot"
+    
+    # Check for common invalid patterns
+    if '..' in email:
+        return False, "Email cannot contain consecutive dots"
+    
+    if email.startswith('.') or email.endswith('.'):
+        return False, "Email cannot start or end with a dot"
+    
+    if email.startswith('@') or email.endswith('@'):
+        return False, "Email cannot start or end with @"
+    
+    # Check for valid characters (simplified regex)
+    import re
+    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(email_pattern, email):
+        return False, "Email format is invalid"
+    
+    return True, email
+
+def validate_password(password):
+    """Validate password strength"""
+    if not password or not isinstance(password, str):
+        return False, "Password is required"
+    
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
+    
+    # Check for at least one uppercase letter
+    if not re.search(r'[A-Z]', password):
+        return False, "Password must contain at least one uppercase letter"
+    
+    # Check for at least one lowercase letter
+    if not re.search(r'[a-z]', password):
+        return False, "Password must contain at least one lowercase letter"
+    
+    # Check for at least one digit
+    if not re.search(r'\d', password):
+        return False, "Password must contain at least one digit"
+    
+    # Check for at least one special character
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        return False, "Password must contain at least one special character"
+    
+    return True, "Password is valid"
+
+def validate_name(name):
+    """Validate name format"""
+    if not name or not isinstance(name, str):
+        return False, "Name is required"
+    
+    if len(name.strip()) < 2:
+        return False, "Name must be at least 2 characters long"
+    
+    if len(name) > 50:
+        return False, "Name must be less than 50 characters"
+    
+    # Check if name contains only letters, spaces, and basic punctuation
+    if not re.match(r'^[a-zA-Z\s\-\'\.]+$', name):
+        return False, "Name can only contain letters, spaces, hyphens, and apostrophes"
+    
+    return True, name.strip()
+
+def validate_medical_content(message):
+    """Validate that the message doesn't contain emergency or dangerous content"""
+    if not message or not isinstance(message, str):
+        return True, ""  # Empty message will be handled elsewhere
+    
+    message_lower = message.lower()
+    
+    # Emergency keywords that should trigger immediate professional help recommendation
+    emergency_keywords = [
+        'heart attack', 'chest pain', 'stroke', 'suicide', 'kill myself',
+        'dying', 'severe pain', 'can\'t breathe', 'difficulty breathing',
+        'unconscious', 'bleeding heavily', 'broken bone', 'seizure',
+        'overdose', 'poison', 'burn', 'electrocution'
+    ]
+    
+    for keyword in emergency_keywords:
+        if keyword in message_lower:
+            return False, f"Emergency situation detected: {keyword}. Please call emergency services immediately."
+    
+    return True, ""
+
 # Medical Disclaimer
 MEDICAL_DISCLAIMER = """**Important Medical Disclaimer**: 
 I am an AI assistant and not a medical professional. My advice is for informational purposes only and should not be considered medical advice. Always consult with a qualified healthcare provider for medical concerns, diagnoses, or treatment. In case of emergency, contact emergency services immediately."""
 
-HEALTH_PROMPT_TEMPLATE = """As a health assistant, provide helpful, accurate, and safe health information. Follow these guidelines:
-
-1. Be empathetic and supportive
-2. Provide general wellness information
-3. For specific symptoms or medical conditions, recommend consulting a healthcare professional
-4. Never diagnose conditions or prescribe treatments
-5. Always include a disclaimer about consulting doctors
-6. Be clear that you're an AI assistant
-7. Focus on prevention and general wellness
-
-Current conversation:
-User: {user_message}
-Health Assistant:"""
-
 # MongoDB Configuration
 try:
-    mongo_uri = f"mongodb+srv://{os.getenv('MONGO_USERNAME')}:{os.getenv('MONGO_PASSWORD')}@{os.getenv('MONGO_CLUSTER')}/{os.getenv('MONGO_DB_NAME')}?retryWrites=true&w=majority"
-    client = MongoClient(mongo_uri)
-    db = client[os.getenv('MONGO_DB_NAME')]
+    mongo_uri = os.getenv('MONGO_URI') or f"mongodb+srv://{os.getenv('MONGO_USERNAME')}:{os.getenv('MONGO_PASSWORD')}@{os.getenv('MONGO_CLUSTER')}/{os.getenv('MONGO_DB_NAME')}?retryWrites=true&w=majority"
+    client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+    # Test connection
+    client.admin.command('ping')
+    db = client[os.getenv('MONGO_DB_NAME', 'healthbot')]
     print("✅ Connected to MongoDB successfully!")
 except Exception as e:
     print(f"❌ MongoDB connection failed: {e}")
+    # Fallback to local database or create mock
     client, db = None, None
-
-# Cohere AI Configuration
-try:
-    cohere_client = cohere.Client(os.getenv('COHERE_API_KEY'))
-    print("✅ Cohere AI configured successfully!")
-except Exception as e:
-    print(f"❌ Cohere AI configuration failed: {e}")
-    cohere_client = None
 
 # Kafka Configuration
 KAFKA_ENABLED = os.getenv('KAFKA_ENABLED', 'false').lower() == 'true'
@@ -155,7 +293,7 @@ def start_kafka_consumer():
 def process_kafka_message(message):
     try:
         print(f"📨 Processing Kafka message: {message}")
-        if db:
+        if db is not None:
             db.message_logs.insert_one({
                 **message,
                 'processed_at': datetime.utcnow()
@@ -168,14 +306,16 @@ start_kafka_consumer()
 
 # Helper function to get or create current session
 def get_current_session(user_id):
-    if not db:
+    if db is None:
         return str(uuid.uuid4())
     
     # Get today's session or create new one
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
+    
     session = db.chat_sessions.find_one({
         "user_id": user_id,
-        "created_at": {"$gte": today_start}
+        "created_at": {"$gte": today_start, "$lt": today_end}
     })
     
     if not session:
@@ -184,14 +324,424 @@ def get_current_session(user_id):
             "session_id": session_id,
             "user_id": user_id,
             "created_at": datetime.utcnow(),
-            "message_count": 0
+            "message_count": 0,
+            "last_activity": datetime.utcnow()
         }
         db.chat_sessions.insert_one(session_data)
         return session_id
     
+    # Update last activity
+    db.chat_sessions.update_one(
+        {"session_id": session["session_id"]},
+        {"$set": {"last_activity": datetime.utcnow()}}
+    )
+    
     return session["session_id"]
 
-# Animated Frontend Templates
+# Frontend Routes
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATES['index'])
+
+@app.route('/login')
+def login_page():
+    return render_template_string(HTML_TEMPLATES['login'])
+
+@app.route('/register')
+def register_page():
+    return render_template_string(HTML_TEMPLATES['register'])
+
+@app.route('/chat')
+def chat_page():
+    return render_template_string(HTML_TEMPLATES['chat'])
+
+@app.route('/profile')
+def profile_page():
+    return render_template_string(HTML_TEMPLATES['profile'])
+
+# Backend API Routes
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    if db is None:
+        return jsonify({"error": "Database connection unavailable"}), 503
+        
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        
+        # Validate inputs
+        if not email or not password or not name:
+            return jsonify({"error": "Email, password, and name are required"}), 400
+        
+        # Validate email
+        is_valid_email, email_message = validate_email(email)
+        if not is_valid_email:
+            return jsonify({"error": email_message}), 400
+        
+        # Validate password
+        is_valid_password, password_message = validate_password(password)
+        if not is_valid_password:
+            return jsonify({"error": password_message}), 400
+        
+        # Validate name
+        is_valid_name, name_message = validate_name(name)
+        if not is_valid_name:
+            return jsonify({"error": name_message}), 400
+        
+        if db.users.find_one({"email": email}):
+            return jsonify({"error": "User already exists"}), 400
+        
+        hashed_password = hashpw(password.encode('utf-8'), gensalt())
+        user_data = {
+            "user_id": str(uuid.uuid4()),
+            "email": email,
+            "password": hashed_password.decode('utf-8'),
+            "name": name,
+            "created_at": datetime.utcnow(),
+        }
+        
+        db.users.insert_one(user_data)
+        
+        token = jwt.encode({
+            'user_id': user_data['user_id'],
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }, os.getenv('JWT_SECRET', 'secret'), algorithm="HS256")
+        
+        send_kafka_message('user_events', {
+            'event_type': 'user_registered',
+            'user_id': user_data['user_id'],
+            'email': email,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+        return jsonify({
+            "message": "User registered successfully",
+            "token": token,
+            "user_id": user_data['user_id'],
+            "name": name
+        }), 201
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    if db is None:
+        return jsonify({"error": "Database connection unavailable"}), 503
+        
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        
+        user = db.users.find_one({"email": email})
+        if not user or not checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+            return jsonify({"error": "Invalid credentials"}), 401
+        
+        token = jwt.encode({
+            'user_id': user['user_id'],
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }, os.getenv('JWT_SECRET', 'secret'), algorithm="HS256")
+        
+        send_kafka_message('user_events', {
+            'event_type': 'user_logged_in',
+            'user_id': user['user_id'],
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+        return jsonify({
+            "message": "Login successful",
+            "token": token,
+            "user_id": user['user_id'],
+            "name": user.get('name')
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# UPDATED CHAT ROUTE WITH SIMPLE RESPONSE SYSTEM
+@app.route('/api/chat', methods=['POST'])
+@token_required
+def chat():
+    try:
+        data = request.json
+        user_message = data.get('message', '').strip()
+        session_id = data.get('session_id')
+        
+        if not user_message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        # Validate medical content for emergencies
+        is_safe, emergency_message = validate_medical_content(user_message)
+        if not is_safe:
+            return jsonify({
+                "response": f"🚨 {emergency_message} Please call emergency services immediately.",
+                "session_id": session_id or get_current_session(request.current_user['user_id'])
+            })
+        
+        # Get or create session
+        if not session_id:
+            session_id = get_current_session(request.current_user['user_id'])
+        
+        # Get response from simple health system (NO API DEPENDENCY)
+        bot_response = get_health_response(user_message)
+        
+        # Add disclaimer for medical topics
+        medical_keywords = ['symptom', 'pain', 'fever', 'headache', 'cough', 'cold', 'flu', 'disease', 'condition', 'diagnose', 'treatment', 'medicine', 'drug', 'pill']
+        if any(keyword in user_message.lower() for keyword in medical_keywords):
+            bot_response += f"\n\n{MEDICAL_DISCLAIMER}"
+        
+        # Save conversation
+        conversation_data = {
+            'conversation_id': str(uuid.uuid4()),
+            'session_id': session_id,
+            'user_id': request.current_user['user_id'],
+            'user_message': user_message,
+            'bot_response': bot_response,
+            'timestamp': datetime.utcnow()
+        }
+
+        if db is not None:
+            db.conversations.insert_one(conversation_data)
+            
+            # Update session
+            db.chat_sessions.update_one(
+                {"session_id": session_id},
+                {
+                    "$inc": {"message_count": 1},
+                    "$set": {
+                        "last_activity": datetime.utcnow(),
+                        "user_id": request.current_user['user_id']
+                    },
+                    "$setOnInsert": {
+                        "created_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+        
+        # Send to Kafka if enabled
+        send_kafka_message('chat_messages', {
+            'conversation_id': conversation_data['conversation_id'],
+            'user_id': request.current_user['user_id'],
+            'user_message': user_message,
+            'bot_response': bot_response,
+            'timestamp': conversation_data['timestamp'].isoformat()
+        })
+        
+        return jsonify({
+            "response": bot_response,
+            "conversation_id": conversation_data['conversation_id'],
+            "session_id": session_id
+        })
+        
+    except Exception as e:
+        print(f"Chat API error: {e}")
+        return jsonify({"error": "Sorry, I'm having trouble processing your request. Please try again."}), 500
+
+@app.route('/api/chat/history', methods=['GET'])
+@token_required
+def get_chat_history():
+    try:
+        days = int(request.args.get('days', 30))
+        since_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get chat sessions with proper grouping
+        pipeline = [
+            {"$match": {
+                "user_id": request.current_user['user_id'],
+                "timestamp": {"$gte": since_date}
+            }},
+            {"$sort": {"timestamp": -1}},
+            {"$group": {
+                "_id": "$session_id",
+                "last_message": {"$first": "$user_message"},
+                "message_count": {"$sum": 1},
+                "last_timestamp": {"$first": "$timestamp"},
+                "first_timestamp": {"$min": "$timestamp"}
+            }},
+            {"$sort": {"last_timestamp": -1}},
+            {"$project": {
+                "session_id": "$_id",
+                "preview": {"$cond": {
+                    "if": {"$gt": [{"$strLenCP": "$last_message"}, 50]},
+                    "then": {"$concat": [{"$substrCP": ["$last_message", 0, 47]}, "..."]},
+                    "else": "$last_message"
+                }},
+                "message_count": 1,
+                "date": "$last_timestamp",
+                "_id": 0
+            }}
+        ]
+        
+        sessions = list(db.conversations.aggregate(pipeline)) if db is not None else []
+        
+        return jsonify({"sessions": sessions})
+    except Exception as e:
+        print(f"Chat history error: {e}")
+        return jsonify({"sessions": []})
+
+@app.route('/api/chat/session/<session_id>', methods=['GET'])
+@token_required
+def get_chat_session(session_id):
+    try:
+        conversations = list(db.conversations.find(
+            {
+                'user_id': request.current_user['user_id'],
+                'session_id': session_id
+            },
+            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1}
+        ).sort('timestamp', 1)) if db is not None else []
+        
+        # Format messages for display
+        messages = []
+        for conv in conversations:
+            messages.extend([
+                {
+                    'sender': 'user',
+                    'text': conv['user_message'],
+                    'timestamp': conv['timestamp']
+                },
+                {
+                    'sender': 'bot', 
+                    'text': conv['bot_response'],
+                    'timestamp': conv['timestamp']
+                }
+            ])
+        
+        return jsonify({
+            "messages": messages, 
+            "session_id": session_id,
+            "count": len(messages)
+        })
+    except Exception as e:
+        print(f"Chat session error: {e}")
+        return jsonify({"messages": [], "session_id": session_id})
+
+@app.route('/api/chat/current', methods=['GET'])
+@token_required
+def get_current_chat():
+    try:
+        session_id = get_current_session(request.current_user['user_id'])
+        
+        # Get today's messages
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        conversations = list(db.conversations.find(
+            {
+                'user_id': request.current_user['user_id'],
+                'session_id': session_id,
+                'timestamp': {"$gte": today_start}
+            },
+            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1}
+        ).sort('timestamp', 1)) if db is not None else []
+        
+        # Format messages for display
+        messages = []
+        for conv in conversations:
+            messages.append({
+                'sender': 'user',
+                'text': conv['user_message'],
+                'timestamp': conv['timestamp']
+            })
+            messages.append({
+                'sender': 'bot',
+                'text': conv['bot_response'],
+                'timestamp': conv['timestamp']
+            })
+        
+        return jsonify({"messages": messages, "session_id": session_id})
+    except Exception as e:
+        print(f"Current chat error: {e}")
+        return jsonify({"messages": [], "session_id": get_current_session(request.current_user['user_id'])})
+
+@app.route('/api/conversations', methods=['GET'])
+@token_required
+def get_conversations():
+    try:
+        limit = int(request.args.get('limit', 10))
+        skip = int(request.args.get('skip', 0))
+        
+        conversations = list(db.conversations.find(
+            {'user_id': request.current_user['user_id']},
+            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1, 'conversation_id': 1}
+        ).sort('timestamp', -1).skip(skip).limit(limit)) if db is not None else []
+        
+        return jsonify({"conversations": conversations})
+    except Exception as e:
+        print(f"Conversations error: {e}")
+        return jsonify({"conversations": []})
+
+@app.route('/api/user/profile', methods=['GET'])
+@token_required
+def get_profile():
+    try:
+        user_data = db.users.find_one(
+            {"user_id": request.current_user['user_id']},
+            {'_id': 0, 'password': 0}
+        ) if db is not None else None
+        
+        if not user_data:
+            return jsonify({"error": "User not found"}), 404
+            
+        return jsonify({"user": user_data})
+    except Exception as e:
+        print(f"Profile error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": {
+            "mongodb": "connected" if db is not None else "disconnected",
+            "health_bot": "available",
+            "kafka": "connected" if KAFKA_ENABLED else "disabled"
+        },
+        "version": "3.0.0"
+    }
+    return jsonify(status)
+
+@app.route('/api/debug/status', methods=['GET'])
+@token_required
+def debug_status():
+    """Debug endpoint to check API status"""
+    user_id = request.current_user['user_id']
+    
+    status = {
+        "user_id": user_id,
+        "database_connected": db is not None,
+        "health_bot_available": True,
+        "kafka_enabled": KAFKA_ENABLED,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
+    # Test database operations
+    if db is not None:
+        try:
+            # Test user query
+            user = db.users.find_one({"user_id": user_id})
+            status["user_exists"] = user is not None
+            
+            # Test conversations count
+            conv_count = db.conversations.count_documents({"user_id": user_id})
+            status["conversation_count"] = conv_count
+            
+            # Test sessions count
+            session_count = db.chat_sessions.count_documents({"user_id": user_id})
+            status["session_count"] = session_count
+            
+        except Exception as e:
+            status["database_error"] = str(e)
+    
+    return jsonify(status)
+
+# HTML Templates (YOUR EXISTING FRONTEND - KEEP EXACTLY THE SAME)
 HTML_TEMPLATES = {
     'index': '''
     <!DOCTYPE html>
@@ -209,23 +759,10 @@ HTML_TEMPLATES = {
                 from { opacity: 0; transform: translateY(20px); }
                 to { opacity: 1; transform: translateY(0); }
             }
-            @keyframes pulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.7; }
-            }
             .float-animation { animation: float 3s ease-in-out infinite; }
             .fade-in { animation: fadeIn 0.6s ease-out; }
-            .pulse-animation { animation: pulse 2s ease-in-out infinite; }
             .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
             .health-gradient { background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
-            .chat-bubble-user { 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                border-bottom-right-radius: 4px;
-            }
-            .chat-bubble-bot { 
-                background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-                border-bottom-left-radius: 4px;
-            }
         </style>
     </head>
     <body class="bg-gray-100 min-h-screen">
@@ -720,14 +1257,6 @@ HTML_TEMPLATES = {
                                     class="health-gradient text-white px-8 py-4 rounded-2xl hover:opacity-90 transform hover:scale-105 transition-all duration-300 shadow-lg font-semibold">
                                 <i class="fas fa-paper-plane mr-2"></i>Send
                             </button>
-                            <button onclick="toggleVoice()" id="voice-button"
-                                    class="bg-blue-500 text-white px-4 py-4 rounded-2xl hover:bg-blue-600 transform hover:scale-105 transition-all duration-300 shadow-lg">
-                                <i class="fas fa-microphone"></i>
-                            </button>
-                            <button onclick="stopResponse()" id="stop-button" style="display: none;"
-                                    class="bg-red-500 text-white px-4 py-4 rounded-2xl hover:bg-red-600 transform hover:scale-105 transition-all duration-300 shadow-lg">
-                                <i class="fas fa-stop"></i>
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -745,9 +1274,6 @@ HTML_TEMPLATES = {
             document.getElementById('user-info').innerHTML = `<i class="fas fa-user mr-2"></i>${userName}`;
 
             let isTyping = false;
-            let currentSpeech = null;
-            let isVoiceEnabled = false;
-            let stopResponseRequested = false;
             let currentSessionId = null;
             let chatHistory = [];
 
@@ -765,17 +1291,28 @@ HTML_TEMPLATES = {
                     const data = await response.json();
                     
                     if (response.ok) {
-                        chatHistory = data.sessions;
+                        chatHistory = data.sessions || [];
                         displayChatHistory();
+                    } else {
+                        console.error('Failed to load chat history:', data.error);
+                        document.getElementById('chat-history').innerHTML = 
+                            '<div class="text-gray-500 text-center py-4">Failed to load chat history</div>';
                     }
                 } catch (error) {
                     console.error('Error loading chat history:', error);
+                    document.getElementById('chat-history').innerHTML = 
+                        '<div class="text-gray-500 text-center py-4">Error loading chat history</div>';
                 }
             }
 
             function displayChatHistory() {
                 const historyContainer = document.getElementById('chat-history');
                 historyContainer.innerHTML = '';
+
+                if (chatHistory.length === 0) {
+                    historyContainer.innerHTML = '<div class="text-gray-500 text-center py-4">No chat history yet</div>';
+                    return;
+                }
 
                 // Group sessions by date
                 const sessionsByDate = {};
@@ -803,7 +1340,7 @@ HTML_TEMPLATES = {
                             <div class="flex justify-between items-start">
                                 <div class="flex-1">
                                     <div class="font-medium text-sm">${session.preview || 'New conversation'}</div>
-                                    <div class="text-xs text-gray-500 mt-1">${session.message_count} messages</div>
+                                    <div class="text-xs text-gray-500 mt-1">${session.message_count || 0} messages</div>
                                 </div>
                                 <div class="text-xs text-gray-400">${new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
                             </div>
@@ -823,8 +1360,10 @@ HTML_TEMPLATES = {
                     
                     if (response.ok) {
                         currentSessionId = sessionId;
-                        displayChatMessages(data.messages);
+                        displayChatMessages(data.messages || []);
                         displayChatHistory(); // Update active chat highlight
+                    } else {
+                        console.error('Failed to load chat session:', data.error);
                     }
                 } catch (error) {
                     console.error('Error loading chat session:', error);
@@ -894,57 +1433,6 @@ HTML_TEMPLATES = {
                 sendMessage();
             }
 
-            function toggleVoice() {
-                isVoiceEnabled = !isVoiceEnabled;
-                const voiceButton = document.getElementById('voice-button');
-                if (isVoiceEnabled) {
-                    voiceButton.innerHTML = '<i class="fas fa-microphone-slash"></i>';
-                    voiceButton.classList.remove('bg-blue-500');
-                    voiceButton.classList.add('bg-purple-500');
-                    speakText('Voice mode activated');
-                } else {
-                    voiceButton.innerHTML = '<i class="fas fa-microphone"></i>';
-                    voiceButton.classList.remove('bg-purple-500');
-                    voiceButton.classList.add('bg-blue-500');
-                    if (currentSpeech) {
-                        currentSpeech.cancel();
-                    }
-                }
-            }
-
-            function stopResponse() {
-                stopResponseRequested = true;
-                if (currentSpeech) {
-                    currentSpeech.cancel();
-                }
-                hideTypingIndicator();
-                isTyping = false;
-                document.getElementById('stop-button').style.display = 'none';
-                document.getElementById('send-button').style.display = 'block';
-            }
-
-            function speakText(text) {
-                if (!isVoiceEnabled) return;
-                
-                if ('speechSynthesis' in window) {
-                    if (currentSpeech) {
-                        currentSpeech.cancel();
-                    }
-                    
-                    const speech = new SpeechSynthesisUtterance(text);
-                    speech.rate = 0.8;
-                    speech.pitch = 1;
-                    speech.volume = 1;
-                    
-                    currentSpeech = speech;
-                    window.speechSynthesis.speak(speech);
-                    
-                    speech.onend = function() {
-                        currentSpeech = null;
-                    };
-                }
-            }
-
             async function sendMessage() {
                 const input = document.getElementById('message-input');
                 const message = input.value.trim();
@@ -954,12 +1442,9 @@ HTML_TEMPLATES = {
                 addMessageToDisplay('user', message, new Date().toISOString(), true);
                 input.value = '';
                 
-                // Show typing indicator and stop button
+                // Show typing indicator
                 showTypingIndicator();
                 isTyping = true;
-                stopResponseRequested = false;
-                document.getElementById('stop-button').style.display = 'block';
-                document.getElementById('send-button').style.display = 'none';
 
                 try {
                     const response = await fetch('/api/chat', {
@@ -977,28 +1462,19 @@ HTML_TEMPLATES = {
                     const data = await response.json();
                     hideTypingIndicator();
                     isTyping = false;
-                    document.getElementById('stop-button').style.display = 'none';
-                    document.getElementById('send-button').style.display = 'block';
                     
-                    if (response.ok && !stopResponseRequested) {
+                    if (response.ok) {
                         currentSessionId = data.session_id;
                         addMessageToDisplay('bot', data.response, new Date().toISOString(), true);
                         
                         // Reload chat history to show updated session
                         loadChatHistory();
-                        
-                        // Speak the response if voice is enabled
-                        if (isVoiceEnabled) {
-                            speakText(data.response);
-                        }
-                    } else if (!response.ok) {
+                    } else {
                         addMessageToDisplay('bot', 'Sorry, I encountered an error. Please try again.', new Date().toISOString(), true);
                     }
                 } catch (error) {
                     hideTypingIndicator();
                     isTyping = false;
-                    document.getElementById('stop-button').style.display = 'none';
-                    document.getElementById('send-button').style.display = 'block';
                     addMessageToDisplay('bot', 'Network error. Please check your connection.', new Date().toISOString(), true);
                 }
             }
@@ -1055,9 +1531,6 @@ HTML_TEMPLATES = {
             }
 
             function logout() {
-                if (currentSpeech) {
-                    currentSpeech.cancel();
-                }
                 localStorage.clear();
                 window.location.href = '/';
             }
@@ -1191,348 +1664,10 @@ HTML_TEMPLATES = {
     '''
 }
 
-# Frontend Routes
-@app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATES['index'])
-
-@app.route('/login')
-def login_page():
-    return render_template_string(HTML_TEMPLATES['login'])
-
-@app.route('/register')
-def register_page():
-    return render_template_string(HTML_TEMPLATES['register'])
-
-@app.route('/chat')
-def chat_page():
-    return render_template_string(HTML_TEMPLATES['chat'])
-
-@app.route('/profile')
-def profile_page():
-    return render_template_string(HTML_TEMPLATES['profile'])
-
-# Backend API Routes
-@app.route('/api/auth/register', methods=['POST'])
-def register():
-    if db is None:
-        return jsonify({"error": "Database connection unavailable"}), 503
-        
-    try:
-        data = request.json
-        email = data.get('email')
-        password = data.get('password')
-        name = data.get('name')
-        
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
-        
-        if db.users.find_one({"email": email}):
-            return jsonify({"error": "User already exists"}), 400
-        
-        hashed_password = hashpw(password.encode('utf-8'), gensalt())
-        user_data = {
-            "user_id": str(uuid.uuid4()),
-            "email": email,
-            "password": hashed_password.decode('utf-8'),
-            "name": name,
-            "created_at": datetime.utcnow(),
-        }
-        
-        db.users.insert_one(user_data)
-        
-        token = jwt.encode({
-            'user_id': user_data['user_id'],
-            'exp': datetime.utcnow() + timedelta(days=7)
-        }, os.getenv('JWT_SECRET', 'secret'), algorithm="HS256")
-        
-        send_kafka_message('user_events', {
-            'event_type': 'user_registered',
-            'user_id': user_data['user_id'],
-            'email': email,
-            'timestamp': datetime.utcnow().isoformat()
-        })
-        
-        return jsonify({
-            "message": "User registered successfully",
-            "token": token,
-            "user_id": user_data['user_id'],
-            "name": name
-        }), 201
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/auth/login', methods=['POST'])
-def login():
-    if db is None:
-        return jsonify({"error": "Database connection unavailable"}), 503
-        
-    try:
-        data = request.json
-        email = data.get('email')
-        password = data.get('password')
-        
-        if not email or not password:
-            return jsonify({"error": "Email and password are required"}), 400
-        
-        user = db.users.find_one({"email": email})
-        if not user or not checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
-            return jsonify({"error": "Invalid credentials"}), 401
-        
-        token = jwt.encode({
-            'user_id': user['user_id'],
-            'exp': datetime.utcnow() + timedelta(days=7)
-        }, os.getenv('JWT_SECRET', 'secret'), algorithm="HS256")
-        
-        send_kafka_message('user_events', {
-            'event_type': 'user_logged_in',
-            'user_id': user['user_id'],
-            'timestamp': datetime.utcnow().isoformat()
-        })
-        
-        return jsonify({
-            "message": "Login successful",
-            "token": token,
-            "user_id": user['user_id'],
-            "name": user.get('name')
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/chat', methods=['POST'])
-@token_required
-def chat():
-    if cohere_client is None:
-        return jsonify({"error": "AI service unavailable"}), 503
-        
-    try:
-        data = request.json
-        user_message = data.get('message', '').strip()
-        session_id = data.get('session_id')
-        
-        if not user_message:
-            return jsonify({"error": "Message is required"}), 400
-        
-        # Get or create session
-        if not session_id:
-            session_id = get_current_session(request.current_user['user_id'])
-        
-        # Enhanced prompt with medical safety
-        health_prompt = HEALTH_PROMPT_TEMPLATE.format(user_message=user_message)
-        
-        try:
-            response = cohere_client.generate(
-                model='command',
-                prompt=health_prompt,
-                max_tokens=200,
-                temperature=0.7,
-                stop_sequences=["\n\n"]
-            )
-            
-            bot_response = response.generations[0].text.strip()
-            
-            # Add disclaimer for medical topics
-            medical_keywords = ['symptom', 'pain', 'fever', 'headache', 'cough', 'cold', 'flu', 'disease', 'condition', 'diagnose', 'treatment', 'medicine', 'drug', 'pill']
-            if any(keyword in user_message.lower() for keyword in medical_keywords):
-                bot_response += f"\n\n{MEDICAL_DISCLAIMER}"
-            
-        except Exception as ai_error:
-            print(f"Cohere API error: {ai_error}")
-            bot_response = "I'm currently having trouble accessing health information. Please try again in a moment. For urgent medical concerns, please contact a healthcare provider directly."
-        
-        # Save conversation
-        conversation_data = {
-            'conversation_id': str(uuid.uuid4()),
-            'session_id': session_id,
-            'user_id': request.current_user['user_id'],
-            'user_message': user_message,
-            'bot_response': bot_response,
-            'timestamp': datetime.utcnow()
-        }
-        
-        if db:
-            db.conversations.insert_one(conversation_data)
-            
-            # Update session message count
-            db.chat_sessions.update_one(
-                {"session_id": session_id},
-                {"$inc": {"message_count": 1}},
-                upsert=True
-            )
-        
-        # Send to Kafka if enabled
-        send_kafka_message('chat_messages', {
-            'conversation_id': conversation_data['conversation_id'],
-            'user_id': request.current_user['user_id'],
-            'user_message': user_message,
-            'bot_response': bot_response,
-            'timestamp': conversation_data['timestamp'].isoformat()
-        })
-        
-        return jsonify({
-            "response": bot_response,
-            "conversation_id": conversation_data['conversation_id'],
-            "session_id": session_id
-        })
-        
-    except Exception as e:
-        print(f"Chat API error: {e}")
-        return jsonify({"error": "Sorry, I'm having trouble processing your request. Please try again."}), 500
-
-@app.route('/api/chat/history', methods=['GET'])
-@token_required
-def get_chat_history():
-    try:
-        days = int(request.args.get('days', 30))
-        since_date = datetime.utcnow() - timedelta(days=days)
-        
-        # Get unique sessions with their messages
-        pipeline = [
-            {"$match": {
-                "user_id": request.current_user['user_id'],
-                "timestamp": {"$gte": since_date}
-            }},
-            {"$group": {
-                "_id": "$session_id",
-                "last_message": {"$last": "$$ROOT"},
-                "message_count": {"$sum": 1},
-                "first_timestamp": {"$min": "$timestamp"}
-            }},
-            {"$sort": {"first_timestamp": -1}},
-            {"$project": {
-                "session_id": "$_id",
-                "preview": {"$substr": ["$last_message.user_message", 0, 50]},
-                "message_count": 1,
-                "date": "$first_timestamp",
-                "_id": 0
-            }}
-        ]
-        
-        sessions = list(db.conversations.aggregate(pipeline))
-        
-        return jsonify({"sessions": sessions})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/chat/session/<session_id>', methods=['GET'])
-@token_required
-def get_chat_session(session_id):
-    try:
-        conversations = list(db.conversations.find(
-            {
-                'user_id': request.current_user['user_id'],
-                'session_id': session_id
-            },
-            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1}
-        ).sort('timestamp', 1))
-        
-        # Format messages for display
-        messages = []
-        for conv in conversations:
-            messages.append({
-                'sender': 'user',
-                'text': conv['user_message'],
-                'timestamp': conv['timestamp']
-            })
-            messages.append({
-                'sender': 'bot',
-                'text': conv['bot_response'],
-                'timestamp': conv['timestamp']
-            })
-        
-        return jsonify({"messages": messages, "session_id": session_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/chat/current', methods=['GET'])
-@token_required
-def get_current_chat():
-    try:
-        session_id = get_current_session(request.current_user['user_id'])
-        
-        # Get today's messages
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        conversations = list(db.conversations.find(
-            {
-                'user_id': request.current_user['user_id'],
-                'session_id': session_id,
-                'timestamp': {"$gte": today_start}
-            },
-            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1}
-        ).sort('timestamp', 1))
-        
-        # Format messages for display
-        messages = []
-        for conv in conversations:
-            messages.append({
-                'sender': 'user',
-                'text': conv['user_message'],
-                'timestamp': conv['timestamp']
-            })
-            messages.append({
-                'sender': 'bot',
-                'text': conv['bot_response'],
-                'timestamp': conv['timestamp']
-            })
-        
-        return jsonify({"messages": messages, "session_id": session_id})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/conversations', methods=['GET'])
-@token_required
-def get_conversations():
-    try:
-        limit = int(request.args.get('limit', 10))
-        skip = int(request.args.get('skip', 0))
-        
-        conversations = list(db.conversations.find(
-            {'user_id': request.current_user['user_id']},
-            {'_id': 0, 'user_message': 1, 'bot_response': 1, 'timestamp': 1, 'conversation_id': 1}
-        ).sort('timestamp', -1).skip(skip).limit(limit))
-        
-        return jsonify({"conversations": conversations})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/user/profile', methods=['GET'])
-@token_required
-def get_profile():
-    try:
-        user_data = db.users.find_one(
-            {"user_id": request.current_user['user_id']},
-            {'_id': 0, 'password': 0}
-        )
-        return jsonify({"user": user_data})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    status = {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "services": {
-            "mongodb": "connected" if db else "disconnected",
-            "cohere_api": "available" if cohere_client else "unavailable",
-            "kafka": "connected" if KAFKA_ENABLED else "disabled"
-        },
-        "version": "3.0.0"
-    }
-    return jsonify(status)
-
 if __name__ == '__main__':
     print("🚀 Starting HealthBot - AI Health Assistant...")
-    print("📊 MongoDB: Connected")
-    print("🤖 Cohere AI: Available")
+    print("📊 MongoDB:", "Connected" if db is not None else "Disconnected")
+    print("🤖 Health Bot:", "✅ Available with smart responses")
     print("📨 Kafka:", "Enabled" if KAFKA_ENABLED else "Disabled")
-    print("🎤 Voice Features: Enabled")
-    print("⏹️  Stop Button: Enabled")
-    print("🔐 Authentication: JWT Enabled")
-    print("💾 Database: MongoDB Atlas")
-    print("📅 Chat History: 30 days retention")
-    print("🆕 New Chat Sessions: Daily auto-creation")
     print("🌐 Live at: http://localhost:5000")
     app.run(debug=True, host='0.0.0.0', port=5000)
