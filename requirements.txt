@@ -11,3 +11,4 @@ kafka-python
 numpy 
 pandas 
 bcrypt 
+confluent-kafka 
