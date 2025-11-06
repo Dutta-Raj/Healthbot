@@ -5,7 +5,7 @@ on:
     branches: [ master ]
 
 jobs:
-  install-test:
+  debug-deps:
     runs-on: ubuntu-latest
     
     steps:
@@ -17,18 +17,24 @@ jobs:
       with:
         python-version: "3.10"
 
-    - name: Install dependencies
+    - name: Check requirements.txt
       run: |
-        echo "=== INSTALLING DEPENDENCIES ==="
+        echo "=== CHECKING REQUIREMENTS.TXT ==="
+        cat requirements.txt
+        echo "=== FILE EXISTS? ==="
+        ls -la requirements.txt
+
+    - name: Try individual installs
+      run: |
+        echo "=== INSTALLING INDIVIDUALLY ==="
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        echo "✅ Dependencies installed!"
+        pip install flask || echo "Flask install had issues"
+        pip install openai || echo "OpenAI install had issues" 
+        pip install python-dotenv || echo "dotenv install had issues"
+        pip install colorama || echo "Colorama install had issues"
+        echo "✅ Individual installs attempted!"
 
-    - name: Verify installation
+    - name: List installed packages
       run: |
-        echo "=== VERIFYING PACKAGES ==="
-        pip list | grep -E "(flask|openai|dotenv|colorama)"
-        echo "✅ Package check completed!"
-
-    - name: Success
-      run: echo "🎉 DEPENDENCIES INSTALLED SUCCESSFULLY!"
+        echo "=== INSTALLED PACKAGES ==="
+        pip list
