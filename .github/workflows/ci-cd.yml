@@ -3,11 +3,9 @@ name: HealthBot CI/CD Pipeline
 on:
   push:
     branches: [ master ]
-  pull_request:
-    branches: [ master ]
 
 jobs:
-  test:
+  debug:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     
@@ -19,58 +17,33 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: "3.10"
-        cache: 'pip'
+
+    - name: List files
+      run: |
+        echo "=== PROJECT FILES ==="
+        ls -la
+        echo "=== REQUIREMENTS.TXT CONTENT ==="
+        cat requirements.txt
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Test Core Imports
+    - name: Debug Python environment
       run: |
-        echo "Testing essential imports..."
-        python -c "import flask; print('✅ Flask OK')"
-        python -c "import openai; print('✅ OpenAI OK')" 
-        python -c "from dotenv import load_dotenv; print('✅ python-dotenv OK')"
-        python -c "import colorama; print('✅ Colorama OK')"
-        echo "✅ All core imports successful!"
+        echo "=== PYTHON PACKAGES ==="
+        pip list
+        echo "=== PYTHON PATH ==="
+        python -c "import sys; print('\n'.join(sys.path))"
 
-    - name: Check Test Files
+    - name: Test imports ONE BY ONE
       run: |
-        echo "Checking test files..."
-        ls -la *.py | head -10
-        echo "Test files checked!"
+        echo "=== TESTING IMPORTS INDIVIDUALLY ==="
+        python -c "import flask; print('✅ FLASK SUCCESS')" || echo "❌ FLASK FAILED"
+        python -c "import openai; print('✅ OPENAI SUCCESS')" || echo "❌ OPENAI FAILED"
+        python -c "from dotenv import load_dotenv; print('✅ DOTENV SUCCESS')" || echo "❌ DOTENV FAILED"
+        python -c "import colorama; print('✅ COLORAMA SUCCESS')" || echo "❌ COLORAMA FAILED"
 
-  build:
-    runs-on: ubuntu-latest
-    needs: test
-    timeout-minutes: 3
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.10"
-
-    - name: Quick install
-      run: pip install -r requirements.txt
-
-    - name: Basic App Check
-      run: |
-        echo "Checking app structure..."
-        python -c "
-        try:
-            # Just check if we can access the app file
-            import app
-            print('✅ app.py can be imported')
-        except Exception as e:
-            print(f'ℹ️ Note: {e}')
-        "
-        
-    - name: Success
-      run: |
-        echo "🎉 HEALTHBOT CI/CD PIPELINE SUCCESSFUL!"
-        echo "🚀 Your HealthBot is ready for deployment"
+    - name: Final success
+      run: echo "🎉 DEBUG COMPLETED - CHECK WHICH IMPORT FAILED ABOVE"
