@@ -1,13 +1,4 @@
-Core Web Server
-Flask==3.1.1
-gunicorn==23.0.0  # Used by the Procfile for deployment
-
-Database and Security
-pymongo==4.14.1   # MongoDB driver
-certifi==2024.12.14 # Needed for MongoDB connection security
-bcrypt==4.3.0     # For password hashing
-PyJWT==2.10.1     # For JSON Web Tokens
-
-Other Utilities
-requests==2.32.3  # For making API calls (e.g., to Hugging Face)
-python-dotenv==1.1.1 # For loading .env variables locally
+openai
+python-dotenv
+flask
+colorama
