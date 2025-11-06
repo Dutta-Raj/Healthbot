@@ -5,7 +5,7 @@ on:
     branches: [ master ]
 
 jobs:
-  simple-test:
+  install-test:
     runs-on: ubuntu-latest
     
     steps:
@@ -17,11 +17,18 @@ jobs:
       with:
         python-version: "3.10"
 
-    - name: Basic file check
+    - name: Install dependencies
       run: |
-        echo "=== BASIC CHECK ==="
-        ls -la
-        echo "Files checked successfully!"
+        echo "=== INSTALLING DEPENDENCIES ==="
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        echo "✅ Dependencies installed!"
+
+    - name: Verify installation
+      run: |
+        echo "=== VERIFYING PACKAGES ==="
+        pip list | grep -E "(flask|openai|dotenv|colorama)"
+        echo "✅ Package check completed!"
 
     - name: Success
-      run: echo "✅ BASIC CI/CD WORKING!"
+      run: echo "🎉 DEPENDENCIES INSTALLED SUCCESSFULLY!"
