@@ -8,8 +8,6 @@ HealthBot is an advanced AI-powered health assistant built with Flask, Cohere AI
 
 🆕 New Chat Sessions - Start fresh conversations anytime
 
-🎤 Voice Features - Text-to-speech with stop functionality
-
 🔐 User Authentication - Secure JWT-based login/register system
 
 ⚠️ Medical Disclaimers - Always reminds to consult healthcare professionals
