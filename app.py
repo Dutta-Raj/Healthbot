@@ -9,7 +9,6 @@ from flask import Flask, request, jsonify, render_template_string
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from bcrypt import hashpw, gensalt, checkpw
-from kafka import KafkaProducer, KafkaConsumer
 
 # Load environment variables
 load_dotenv()
