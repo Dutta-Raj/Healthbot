@@ -17,43 +17,305 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-2024')
 
-# Simple Health Response System (NO API DEPENDENCY)
+# Try to load spaCy NLP model
+try:
+    import spacy
+    nlp = spacy.load("en_core_web_md")
+    print("✅ NLP model loaded successfully!")
+except ImportError:
+    print("❌ spaCy not installed. Install with: pip install spacy")
+    nlp = None
+except OSError:
+    print("❌ spaCy model not found. Download with: python -m spacy download en_core_web_md")
+    nlp = None
+
+# Enhanced Medical Knowledge Base (Domain-Specific Training Data)
+MEDICAL_KNOWLEDGE_BASE = {
+    "symptoms": {
+        "headache": {
+            "description": "Pain in head or neck region",
+            "common_causes": ["tension", "migraine", "dehydration", "stress"],
+            "advice": "Rest in quiet room, stay hydrated, consider OTC pain relief. See doctor if severe or persistent."
+        },
+        "fever": {
+            "description": "Elevated body temperature >100.4°F (38°C)",
+            "common_causes": ["infection", "inflammation", "viral illness"],
+            "advice": "Rest, hydrate, use fever reducers. Seek medical care if fever >103°F or lasts >3 days."
+        },
+        "cough": {
+            "description": "Reflex to clear airways",
+            "types": ["dry", "productive"],
+            "advice": "Stay hydrated, use cough drops. See doctor if coughing blood or lasting >3 weeks."
+        },
+        "fatigue": {
+            "description": "Persistent tiredness or weakness",
+            "common_causes": ["sleep issues", "stress", "nutritional deficiencies", "medical conditions"],
+            "advice": "Ensure adequate sleep, balanced diet, regular exercise. See doctor if persistent."
+        }
+    },
+    "conditions": {
+        "common_cold": {
+            "symptoms": ["runny nose", "sneezing", "sore throat", "cough"],
+            "duration": "7-10 days",
+            "treatment": "Rest, fluids, OTC cold medicine"
+        },
+        "influenza": {
+            "symptoms": ["fever", "body aches", "fatigue", "cough"],
+            "duration": "1-2 weeks", 
+            "treatment": "Rest, fluids, antiviral medication if early"
+        },
+        "hypertension": {
+            "symptoms": ["often none", "headaches", "shortness of breath", "nosebleeds"],
+            "management": "Lifestyle changes, medication, regular monitoring"
+        }
+    },
+    "medications": {
+        "pain_relievers": ["ibuprofen", "acetaminophen", "aspirin"],
+        "cold_medicine": ["decongestants", "antihistamines", "cough suppressants"],
+        "chronic_conditions": ["blood pressure meds", "diabetes meds", "cholesterol meds"]
+    }
+}
+
+# Medical Symptom Checker (Rule-Based)
+class MedicalSymptomChecker:
+    def __init__(self):
+        self.symptom_keywords = {
+            'cardiovascular': ['chest pain', 'heart palpitations', 'shortness of breath', 'high blood pressure', 'heart racing'],
+            'respiratory': ['cough', 'shortness of breath', 'wheezing', 'chest congestion', 'sneezing', 'runny nose'],
+            'gastrointestinal': ['nausea', 'vomiting', 'diarrhea', 'abdominal pain', 'indigestion', 'constipation'],
+            'neurological': ['headache', 'dizziness', 'numbness', 'vision changes', 'confusion', 'migraine'],
+            'musculoskeletal': ['joint pain', 'back pain', 'muscle aches', 'swelling', 'stiffness'],
+            'general': ['fever', 'fatigue', 'weight loss', 'sleep problems', 'weakness']
+        }
+        
+    def classify_symptoms(self, text):
+        """Classify symptoms into medical categories using rule-based matching"""
+        text_lower = text.lower()
+        categories = []
+        
+        for category, keywords in self.symptom_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                categories.append(category)
+                
+        return categories
+    
+    def extract_medical_terms(self, text):
+        """Extract potential medical terms using keyword matching"""
+        if nlp is None:
+            return self.basic_medical_term_extraction(text)
+        
+        try:
+            doc = nlp(text)
+            medical_terms = []
+            
+            # Look for medical entities and relevant nouns
+            for token in doc:
+                if token.pos_ in ['NOUN', 'ADJ'] and self.is_potential_medical_term(token.text):
+                    medical_terms.append(token.text)
+            
+            return list(set(medical_terms))
+        except:
+            return self.basic_medical_term_extraction(text)
+    
+    def basic_medical_term_extraction(self, text):
+        """Fallback medical term extraction using keyword lists"""
+        text_lower = text.lower()
+        found_terms = []
+        
+        # Check all symptom keywords
+        for category, keywords in self.symptom_keywords.items():
+            for keyword in keywords:
+                if keyword in text_lower:
+                    found_terms.append(keyword)
+        
+        # Additional medical terms
+        medical_terms = ['pain', 'fever', 'cough', 'headache', 'nausea', 'dizziness']
+        for term in medical_terms:
+            if term in text_lower:
+                found_terms.append(term)
+                
+        return list(set(found_terms))
+    
+    def is_potential_medical_term(self, word):
+        """Check if a word might be a medical term"""
+        medical_indicators = [
+            'pain', 'ache', 'itis', 'oma', 'osis', 'emia', 'pathy'
+        ]
+        return any(indicator in word.lower() for indicator in medical_indicators)
+
+# Initialize symptom checker
+symptom_checker = MedicalSymptomChecker()
+
+# Enhanced Content Safety with Medical Guardrails
+class MedicalSafetyGuardrails:
+    def __init__(self):
+        self.prohibited_topics = [
+            'prescription without consultation', 'illegal drugs', 'self-harm methods',
+            'dangerous procedures', 'unverified treatments'
+        ]
+        
+        self.high_risk_conditions = [
+            'chest pain', 'difficulty breathing', 'severe bleeding', 'stroke symptoms',
+            'heart attack', 'suicidal thoughts'
+        ]
+    
+    def validate_medical_query(self, query):
+        """Enhanced medical content validation"""
+        query_lower = query.lower()
+        
+        # High-risk condition detection
+        for condition in self.high_risk_conditions:
+            if condition in query_lower:
+                return False, f"🚨 **URGENT**: Symptoms like '{condition}' require immediate medical attention. Please call emergency services or go to the nearest emergency room immediately."
+        
+        # Prohibited content detection
+        for topic in self.prohibited_topics:
+            if topic in query_lower:
+                return False, "I cannot provide information on this topic as it may be harmful. Please consult with healthcare professionals for appropriate medical guidance."
+        
+        return True, ""
+
+# Initialize safety guardrails
+safety_guardrails = MedicalSafetyGuardrails()
+
+# Enhanced Health Response System with Medical Intelligence
 def get_health_response(user_message):
-    """Simple working health responses without external API"""
+    """Advanced health response system with medical intelligence"""
+    
     user_lower = user_message.lower()
     
-    # Pattern matching for common health questions
-    if any(word in user_lower for word in ['exercise', 'fitness', 'workout', 'gym']):
-        return "For exercise and fitness, I recommend starting with 30 minutes of moderate activity daily like walking, cycling, or swimming. Remember to warm up, stay hydrated, and consult your doctor before starting any new exercise routine."
+    # Emergency detection
+    emergency_patterns = [
+        'chest pain', 'difficulty breathing', 'severe headache', 
+        'unconscious', 'bleeding heavily', 'suicidal thoughts',
+        'heart attack', 'stroke symptoms', 'can\'t breathe'
+    ]
     
-    elif any(word in user_lower for word in ['diet', 'nutrition', 'food', 'eat', 'weight']):
-        return "A balanced diet includes plenty of fruits, vegetables, whole grains, and lean proteins. Stay hydrated with water and limit processed foods. For personalized nutrition advice, consult a registered dietitian."
-    
-    elif any(word in user_lower for word in ['sleep', 'insomnia', 'tired', 'energy']):
-        return "Good sleep habits include maintaining a consistent schedule (7-9 hours nightly), creating a dark/quiet bedroom, avoiding screens before bed, and limiting caffeine in the evening. If sleep problems persist, see a healthcare provider."
-    
-    elif any(word in user_lower for word in ['cold', 'flu', 'fever', 'cough', 'sick']):
-        return "For cold and flu symptoms: rest, drink plenty of fluids, use over-the-counter remedies as needed. Seek medical attention for high fever, difficulty breathing, or symptoms lasting more than 10 days."
-    
-    elif any(word in user_lower for word in ['stress', 'anxiety', 'mental', 'mood']):
-        return "For stress management: practice deep breathing, regular exercise, maintain social connections, and ensure adequate sleep. Consider speaking with a mental health professional for persistent concerns."
-    
-    elif any(word in user_lower for word in ['headache', 'pain']):
-        return "For occasional headaches: rest in a quiet/dark room, stay hydrated, and consider over-the-counter pain relief. Consult a doctor for severe, frequent, or worsening headaches."
-    
-    elif any(word in user_lower for word in ['skin', 'acne', 'rash']):
-        return "Basic skin care includes gentle cleansing, moisturizing, and sun protection. For specific skin concerns like persistent acne or rashes, consult a dermatologist."
-    
-    elif any(word in user_lower for word in ['hello', 'hi', 'hey', 'greetings']):
-        return "Hello! I'm your health assistant. I can help with general wellness topics like exercise, nutrition, sleep, and common health questions. How can I assist you today?"
-    
-    elif any(word in user_lower for word in ['thank', 'thanks', 'appreciate']):
-        return "You're welcome! I'm glad I could help. Remember to consult healthcare professionals for specific medical concerns."
-    
-    else:
-        return "I'm here to help with general health and wellness information. I can provide guidance on exercise, nutrition, sleep, stress management, and common health topics. For specific medical concerns, please consult a healthcare professional."
+    for pattern in emergency_patterns:
+        if pattern in user_lower:
+            return "🚨 **EMERGENCY ALERT**: This sounds serious. Please call emergency services immediately or go to the nearest emergency room. Do not delay seeking medical attention."
 
-print("✅ Health response system initialized successfully!")
+    # Medical symptom analysis
+    symptom_categories = symptom_checker.classify_symptoms(user_message)
+    medical_terms = symptom_checker.extract_medical_terms(user_message)
+    
+    # Enhanced pattern matching with medical context
+    if any(word in user_lower for word in ['heart', 'chest', 'cardio', 'blood pressure', 'palpitations']):
+        return """**Cardiovascular Health**: 
+For heart-related concerns: monitor your blood pressure regularly, maintain a heart-healthy diet (low sodium, fruits vegetables), exercise regularly, and avoid smoking. 
+
+🚨 **Seek immediate medical attention** for: chest pain, pressure, or discomfort; shortness of breath; palpitations; or pain radiating to arm/jaw.
+
+*Consult your healthcare provider for personalized cardiovascular assessment.*"""
+
+    elif any(word in user_lower for word in ['diabetes', 'blood sugar', 'glucose', 'insulin']):
+        return """**Diabetes Management**:
+Key strategies: monitor blood sugar regularly, follow a balanced diet (controlled carbohydrates), maintain healthy weight, exercise regularly, and take medications as prescribed.
+
+📋 **Consult your healthcare provider** for personalized diabetes management plan and regular A1C monitoring."""
+
+    elif any(word in user_lower for word in ['covid', 'coronavirus', 'pandemic']):
+        return """**COVID-19 Guidance**:
+Common symptoms: fever, cough, shortness of breath, fatigue, loss of taste/smell. 
+Prevention: vaccination, masking in crowded areas, hand hygiene, social distancing.
+ 
+🏥 **Testing and treatment**: Consult healthcare provider for testing and treatment options. Isolate if symptomatic."""
+
+    elif any(word in user_lower for word in ['exercise', 'fitness', 'workout', 'gym']):
+        return """**Exercise & Physical Activity**:
+Recommendations: 150 minutes moderate exercise or 75 minutes vigorous exercise weekly. Include strength training 2x/week.
+
+💡 **Tips**: Start gradually, warm up/cool down, stay hydrated, listen to your body. Consult doctor before starting new exercise program if you have health conditions."""
+
+    elif any(word in user_lower for word in ['diet', 'nutrition', 'food', 'eat', 'weight']):
+        return """**Nutrition & Healthy Eating**:
+Balanced diet: fruits, vegetables, whole grains, lean proteins, healthy fats. Limit processed foods, sugar, saturated fats.
+
+🥗 **Portion control**: Use plate method - ½ vegetables, ¼ protein, ¼ whole grains. Stay hydrated with water."""
+
+    elif any(word in user_lower for word in ['sleep', 'insomnia', 'tired', 'energy']):
+        return """**Sleep Health**:
+Adults need 7-9 hours nightly. Sleep hygiene: consistent schedule, dark/quiet room, avoid screens before bed, limit caffeine.
+
+😴 **For insomnia**: Relaxation techniques, cognitive behavioral therapy. Consult doctor if sleep problems persist."""
+
+    elif any(word in user_lower for word in ['stress', 'anxiety', 'mental', 'mood', 'depression']):
+        return """**Mental Health & Stress Management**:
+Strategies: mindfulness meditation, regular exercise, social connections, adequate sleep, professional counseling when needed.
+
+🧘 **Immediate help**: If having thoughts of harm, contact crisis helpline or emergency services immediately."""
+
+    elif any(word in user_lower for word in ['headache', 'migraine']):
+        return """**Headache Management**:
+Types: tension (pressure), migraine (throbbing with sensitivity), cluster (severe one-sided).
+
+💊 **Management**: Identify triggers, stress management, OTC pain relief. See doctor for severe, frequent, or changing headaches."""
+
+    elif any(word in user_lower for word in ['cold', 'flu', 'fever', 'cough']):
+        return """**Cold & Flu Care**:
+Rest, fluids, OTC symptom relief. Flu: may benefit from antivirals if started early.
+
+🌡️ **Seek care for**: High fever (>103°F), difficulty breathing, symptoms worsening after 7-10 days."""
+
+    elif any(word in user_lower for word in ['skin', 'acne', 'rash', 'dermatology']):
+        return """**Skin Health**:
+Basic care: gentle cleansing, moisturizing, sun protection. 
+Common issues: acne (cleansing, topical treatments), rashes (identify triggers).
+
+👨‍⚕️ **See dermatologist** for persistent skin conditions or changing moles."""
+
+    elif any(word in user_lower for word in ['allergy', 'allergies', 'sneezing', 'allergic']):
+        return """**Allergy Management**:
+Common triggers: pollen, dust, pet dander, foods. 
+Management: avoid triggers, antihistamines, nasal sprays.
+
+🏥 **See allergist** for testing and immunotherapy if severe."""
+
+    elif any(word in user_lower for word in ['hello', 'hi', 'hey', 'greetings']):
+        return """Hello! I'm your AI health assistant. I can help with:
+
+• Symptom information and general guidance
+• Health education and prevention tips  
+• Medication and treatment information
+• Lifestyle and wellness advice
+
+**Remember**: I provide general health information only. Always consult healthcare professionals for medical diagnoses and treatment."""
+
+    elif any(word in user_lower for word in ['thank', 'thanks', 'appreciate']):
+        return "You're welcome! I'm glad I could help with your health questions. Remember to follow up with healthcare providers for personalized medical advice."
+
+    else:
+        # Use medical term extraction for better understanding
+        if medical_terms:
+            return f"I understand you're asking about health topics including: {', '.join(medical_terms[:3])}. For specific medical information about these concerns, I recommend consulting with a healthcare provider who can evaluate your individual situation and provide personalized medical advice based on proper examination."
+        
+        return """I specialize in health-related topics including:
+• Symptoms and general health information
+• Disease prevention and wellness  
+• Medication education
+• Lifestyle recommendations
+
+Please ask me about specific health concerns, and I'll provide general information and guidance. For medical diagnoses or treatment, please consult healthcare professionals."""
+
+print("✅ Advanced health response system with medical intelligence initialized!")
+
+# Enhanced Medical Disclaimer
+MEDICAL_DISCLAIMER = """
+**🩺 MEDICAL DISCLAIMER**: 
+I am an AI health assistant and not a licensed healthcare provider. The information I provide is for:
+- General health education and awareness
+- Symptom information and general guidance  
+- Prevention and wellness recommendations
+- Medication and treatment education
+
+**I CANNOT**:
+- Provide medical diagnoses
+- Prescribe treatments
+- Replace doctor-patient relationships
+- Handle medical emergencies
+
+Always consult qualified healthcare professionals for medical advice, diagnoses, and treatment. In emergencies, contact emergency services immediately.
+"""
 
 # Validation functions
 def validate_email(email):
@@ -154,13 +416,16 @@ def validate_name(name):
     return True, name.strip()
 
 def validate_medical_content(message):
-    """Validate that the message doesn't contain emergency or dangerous content"""
+    """Enhanced medical content validation with safety guardrails"""
     if not message or not isinstance(message, str):
-        return True, ""  # Empty message will be handled elsewhere
+        return True, ""
     
-    message_lower = message.lower()
+    # Use safety guardrails
+    is_safe, safety_message = safety_guardrails.validate_medical_query(message)
+    if not is_safe:
+        return False, safety_message
     
-    # Emergency keywords that should trigger immediate professional help recommendation
+    # Emergency keyword detection
     emergency_keywords = [
         'heart attack', 'chest pain', 'stroke', 'suicide', 'kill myself',
         'dying', 'severe pain', 'can\'t breathe', 'difficulty breathing',
@@ -169,14 +434,10 @@ def validate_medical_content(message):
     ]
     
     for keyword in emergency_keywords:
-        if keyword in message_lower:
+        if keyword in message.lower():
             return False, f"Emergency situation detected: {keyword}. Please call emergency services immediately."
     
     return True, ""
-
-# Medical Disclaimer
-MEDICAL_DISCLAIMER = """**Important Medical Disclaimer**: 
-I am an AI assistant and not a medical professional. My advice is for informational purposes only and should not be considered medical advice. Always consult with a qualified healthcare provider for medical concerns, diagnoses, or treatment. In case of emergency, contact emergency services immediately."""
 
 # MongoDB Configuration
 try:
@@ -214,7 +475,7 @@ def init_database():
         return
     
     try:
-        collections = ['users', 'conversations', 'message_logs', 'chat_sessions']
+        collections = ['users', 'conversations', 'message_logs', 'chat_sessions', 'medical_logs']
         existing_collections = db.list_collection_names()
         
         for collection_name in collections:
@@ -226,6 +487,7 @@ def init_database():
         db.conversations.create_index([("user_id", 1), ("timestamp", -1)])
         db.conversations.create_index([("session_id", 1)])
         db.chat_sessions.create_index([("user_id", 1), ("created_at", -1)])
+        db.medical_logs.create_index([("user_id", 1), ("timestamp", -1)])
         print("✅ Database initialized successfully!")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
@@ -337,6 +599,26 @@ def get_current_session(user_id):
     )
     
     return session["session_id"]
+
+# Enhanced Medical Logging
+def log_medical_interaction(user_id, query, response, symptom_categories=None):
+    """Log medical interactions for analysis and improvement"""
+    if db is not None:
+        try:
+            medical_log = {
+                'log_id': str(uuid.uuid4()),
+                'user_id': user_id,
+                'query': query,
+                'response': response,
+                'symptom_categories': symptom_categories or [],
+                'timestamp': datetime.utcnow(),
+                'has_emergency_keywords': any(keyword in query.lower() for keyword in [
+                    'emergency', 'urgent', '911', 'hospital', 'ambulance'
+                ])
+            }
+            db.medical_logs.insert_one(medical_log)
+        except Exception as e:
+            print(f"❌ Medical logging error: {e}")
 
 # Frontend Routes
 @app.route('/')
@@ -464,7 +746,7 @@ def login():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# UPDATED CHAT ROUTE WITH SIMPLE RESPONSE SYSTEM
+# UPDATED CHAT ROUTE WITH ENHANCED MEDICAL TECHNOLOGY
 @app.route('/api/chat', methods=['POST'])
 @token_required
 def chat():
@@ -476,34 +758,45 @@ def chat():
         if not user_message:
             return jsonify({"error": "Message is required"}), 400
         
-        # Validate medical content for emergencies
-        is_safe, emergency_message = validate_medical_content(user_message)
+        # Enhanced medical content validation
+        is_safe, safety_message = validate_medical_content(user_message)
         if not is_safe:
             return jsonify({
-                "response": f"🚨 {emergency_message} Please call emergency services immediately.",
-                "session_id": session_id or get_current_session(request.current_user['user_id'])
+                "response": safety_message,
+                "session_id": session_id or get_current_session(request.current_user['user_id']),
+                "is_emergency": True
             })
         
         # Get or create session
         if not session_id:
             session_id = get_current_session(request.current_user['user_id'])
         
-        # Get response from simple health system (NO API DEPENDENCY)
+        # Analyze symptoms using medical NLP
+        symptom_categories = symptom_checker.classify_symptoms(user_message)
+        
+        # Get response from enhanced health system
         bot_response = get_health_response(user_message)
         
-        # Add disclaimer for medical topics
-        medical_keywords = ['symptom', 'pain', 'fever', 'headache', 'cough', 'cold', 'flu', 'disease', 'condition', 'diagnose', 'treatment', 'medicine', 'drug', 'pill']
+        # Add enhanced disclaimer for medical topics
+        medical_keywords = [
+            'symptom', 'pain', 'fever', 'headache', 'cough', 'cold', 'flu', 
+            'disease', 'condition', 'diagnose', 'treatment', 'medicine', 
+            'drug', 'pill', 'vaccine', 'surgery', 'therapy'
+        ]
+        
         if any(keyword in user_message.lower() for keyword in medical_keywords):
             bot_response += f"\n\n{MEDICAL_DISCLAIMER}"
         
-        # Save conversation
+        # Save conversation with medical context
         conversation_data = {
             'conversation_id': str(uuid.uuid4()),
             'session_id': session_id,
             'user_id': request.current_user['user_id'],
             'user_message': user_message,
             'bot_response': bot_response,
-            'timestamp': datetime.utcnow()
+            'symptom_categories': symptom_categories,
+            'timestamp': datetime.utcnow(),
+            'has_medical_content': len(symptom_categories) > 0
         }
 
         if db is not None:
@@ -524,6 +817,14 @@ def chat():
                 },
                 upsert=True
             )
+            
+            # Log medical interaction
+            log_medical_interaction(
+                request.current_user['user_id'],
+                user_message,
+                bot_response,
+                symptom_categories
+            )
         
         # Send to Kafka if enabled
         send_kafka_message('chat_messages', {
@@ -531,18 +832,22 @@ def chat():
             'user_id': request.current_user['user_id'],
             'user_message': user_message,
             'bot_response': bot_response,
-            'timestamp': conversation_data['timestamp'].isoformat()
+            'symptom_categories': symptom_categories,
+            'timestamp': conversation_data['timestamp'].isoformat(),
+            'is_medical': len(symptom_categories) > 0
         })
         
         return jsonify({
             "response": bot_response,
             "conversation_id": conversation_data['conversation_id'],
-            "session_id": session_id
+            "session_id": session_id,
+            "symptom_categories": symptom_categories,
+            "is_medical": len(symptom_categories) > 0
         })
         
     except Exception as e:
         print(f"Chat API error: {e}")
-        return jsonify({"error": "Sorry, I'm having trouble processing your request. Please try again."}), 500
+        return jsonify({"error": "Sorry, I'm having trouble processing your health question. Please try again or consult a healthcare provider for urgent matters."}), 500
 
 @app.route('/api/chat/history', methods=['GET'])
 @token_required
@@ -676,6 +981,46 @@ def get_conversations():
         print(f"Conversations error: {e}")
         return jsonify({"conversations": []})
 
+# New Medical Analytics Endpoint
+@app.route('/api/medical/analytics', methods=['GET'])
+@token_required
+def get_medical_analytics():
+    """Get analytics about user's health queries"""
+    try:
+        if db is None:
+            return jsonify({"error": "Database unavailable"}), 503
+            
+        user_id = request.current_user['user_id']
+        
+        # Get symptom category distribution
+        pipeline = [
+            {"$match": {"user_id": user_id, "symptom_categories": {"$exists": True, "$ne": []}}},
+            {"$unwind": "$symptom_categories"},
+            {"$group": {"_id": "$symptom_categories", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ]
+        
+        symptom_stats = list(db.conversations.aggregate(pipeline))
+        
+        # Get medical query frequency
+        medical_queries = db.conversations.count_documents({
+            "user_id": user_id,
+            "has_medical_content": True
+        })
+        
+        total_queries = db.conversations.count_documents({"user_id": user_id})
+        
+        return jsonify({
+            "symptom_analysis": symptom_stats,
+            "medical_queries_count": medical_queries,
+            "total_queries_count": total_queries,
+            "medical_query_percentage": round((medical_queries / total_queries * 100) if total_queries > 0 else 0, 2)
+        })
+        
+    except Exception as e:
+        print(f"Medical analytics error: {e}")
+        return jsonify({"error": "Unable to generate medical analytics"}), 500
+
 @app.route('/api/user/profile', methods=['GET'])
 @token_required
 def get_profile():
@@ -693,6 +1038,7 @@ def get_profile():
         print(f"Profile error: {e}")
         return jsonify({"error": str(e)}), 500
 
+# Enhanced Health Check with Medical System Status
 @app.route('/api/health', methods=['GET'])
 def health_check():
     status = {
@@ -700,10 +1046,17 @@ def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "services": {
             "mongodb": "connected" if db is not None else "disconnected",
-            "health_bot": "available",
+            "medical_nlp": "available" if nlp is not None else "unavailable",
+            "symptom_checker": "active",
+            "safety_guardrails": "active",
             "kafka": "connected" if KAFKA_ENABLED else "disabled"
         },
-        "version": "3.0.0"
+        "medical_system": {
+            "knowledge_base_entries": len(MEDICAL_KNOWLEDGE_BASE),
+            "symptom_categories": len(symptom_checker.symptom_keywords),
+            "safety_rules": len(safety_guardrails.prohibited_topics) + len(safety_guardrails.high_risk_conditions)
+        },
+        "version": "4.0.0-medical"
     }
     return jsonify(status)
 
@@ -716,7 +1069,9 @@ def debug_status():
     status = {
         "user_id": user_id,
         "database_connected": db is not None,
-        "health_bot_available": True,
+        "medical_nlp_available": nlp is not None,
+        "symptom_checker_active": True,
+        "safety_guardrails_active": True,
         "kafka_enabled": KAFKA_ENABLED,
         "timestamp": datetime.utcnow().isoformat()
     }
@@ -736,12 +1091,16 @@ def debug_status():
             session_count = db.chat_sessions.count_documents({"user_id": user_id})
             status["session_count"] = session_count
             
+            # Test medical logs
+            medical_count = db.medical_logs.count_documents({"user_id": user_id})
+            status["medical_log_count"] = medical_count
+            
         except Exception as e:
             status["database_error"] = str(e)
     
     return jsonify(status)
 
-# HTML Templates (YOUR EXISTING FRONTEND - KEEP EXACTLY THE SAME)
+# HTML Templates (Keep the same as before)
 HTML_TEMPLATES = {
     'index': '''
     <!DOCTYPE html>
@@ -1617,6 +1976,13 @@ HTML_TEMPLATES = {
                             </div>
                         </div>
                     </div>
+
+                    <div class="bg-white/10 rounded-xl p-6 border border-white/20">
+                        <h3 class="text-xl font-bold text-white mb-4">Medical Analytics</h3>
+                        <div id="medical-analytics" class="text-white/80">
+                            Loading medical insights...
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1646,6 +2012,24 @@ HTML_TEMPLATES = {
                             const totalMessages = convData.conversations.reduce((acc, conv) => acc + 2, 0);
                             document.getElementById('messages-count').textContent = totalMessages;
                         }
+
+                        // Load medical analytics
+                        const medicalResponse = await fetch('/api/medical/analytics', {
+                            headers: {'Authorization': 'Bearer ' + token}
+                        });
+                        const medicalData = await medicalResponse.json();
+                        if (medicalResponse.ok) {
+                            let analyticsHTML = '';
+                            if (medicalData.symptom_analysis && medicalData.symptom_analysis.length > 0) {
+                                analyticsHTML += '<div class="mb-4"><strong>Common Health Topics:</strong><ul class="mt-2 space-y-1">';
+                                medicalData.symptom_analysis.forEach(item => {
+                                    analyticsHTML += `<li>• ${item._id}: ${item.count} queries</li>`;
+                                });
+                                analyticsHTML += '</ul></div>';
+                            }
+                            analyticsHTML += `<div><strong>Medical Queries:</strong> ${medicalData.medical_queries_count} out of ${medicalData.total_queries_count} (${medicalData.medical_query_percentage}%)</div>`;
+                            document.getElementById('medical-analytics').innerHTML = analyticsHTML;
+                        }
                     }
                 } catch (error) {
                     console.error('Error loading profile:', error);
@@ -1665,9 +2049,12 @@ HTML_TEMPLATES = {
 }
 
 if __name__ == '__main__':
-    print("🚀 Starting HealthBot - AI Health Assistant...")
+    print("🚀 Starting HealthBot - Advanced AI Medical Assistant...")
     print("📊 MongoDB:", "Connected" if db is not None else "Disconnected")
-    print("🤖 Health Bot:", "✅ Available with smart responses")
+    print("🤖 Medical NLP:", "✅ Available" if nlp is not None else "⚠️ Using rule-based system")
+    print("🩺 Symptom Checker:", "✅ Active")
+    print("🛡️ Safety Guardrails:", "✅ Active") 
+    print("📚 Medical Knowledge Base:", f"✅ {len(MEDICAL_KNOWLEDGE_BASE)} categories")
     print("📨 Kafka:", "Enabled" if KAFKA_ENABLED else "Disabled")
     print("🌐 Live at: http://localhost:5000")
     app.run(debug=True, host='0.0.0.0', port=5000)
