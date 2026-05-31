@@ -9,10 +9,12 @@
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: MONGODB_URI
-        sync: false
-      - key: COHERE_API_KEY
-        sync: false
-      - key: SECRET_KEY
-        generateValue: true
+        value: mongodb+srv://Rajnew2004:Raj%402004@cluster0.qs43zoc.mongodb.net/healthbot
       - key: DATABASE_NAME
         value: healthbot
+      - key: COHERE_API_KEY
+        value: 9YyBJ7fTJqXtgQsYwfYNoMlDqKVsIOqspwQEzBa1
+      - key: SECRET_KEY
+        value: medibot-secret-key-2026
+      - key: KAFKA_ENABLED
+        value: false
