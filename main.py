@@ -1,4 +1,4 @@
-﻿# main.py - Fixed with proper conversation memory
+﻿# main.py - Medical Chatbot with PROPER Conversation Memory
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -76,127 +76,148 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(401, "Invalid token")
 
 def is_medical_query(query: str) -> bool:
+    """Check if query is health-related"""
     medical_keywords = [
-        'blood pressure', 'bp', 'heart', 'diabetes', 'headache', 'pain',
-        'fever', 'cold', 'flu', 'cough', 'symptom', 'medication', 'doctor',
-        'hospital', 'health', 'leg pain', 'back pain', 'stomach', 'nausea',
-        'dizzy', 'fatigue', 'sleep', 'anxiety', 'depression', 'stress',
-        'allergy', 'asthma', 'infection', 'cancer', 'pregnancy', 'baby',
-        'weight', 'cholesterol', 'stroke', 'cut', 'bleed', 'burn', 'broken'
+        'pain', 'leg', 'arm', 'head', 'stomach', 'back', 'chest',
+        'blood pressure', 'bp', 'heart', 'diabetes', 'headache', 
+        'fever', 'cold', 'flu', 'cough', 'symptom', 'medication',
+        'doctor', 'hospital', 'health', 'nausea', 'dizzy', 'fatigue',
+        'sleep', 'anxiety', 'stress', 'allergy', 'infection'
     ]
-    return any(kw in query.lower() for kw in medical_keywords)
+    q = query.lower()
+    return any(kw in q for kw in medical_keywords) or len(query) < 10
 
 def get_conversation_history(session_id: str, limit: int = 10):
-    """Get recent conversation history for context"""
+    """Get full conversation history for context"""
     history = list(conversations_collection.find(
         {"session_id": session_id},
         {"_id": 0, "message": 1, "response": 1, "timestamp": 1}
-    ).sort("timestamp", -1).limit(limit))
-    history.reverse()  # Oldest first
+    ).sort("timestamp", 1).limit(limit))
     return history
 
-def build_context_from_history(history: List[Dict]) -> str:
-    """Build context string from conversation history"""
-    if not history:
-        return ""
+def generate_response_with_memory(query: str, session_id: str = None) -> str:
+    """Generate response with full conversation memory"""
     
-    context = "Previous conversation:\n"
-    for h in history[-6:]:  # Last 6 exchanges
-        context += f"User: {h['message']}\nAssistant: {h['response']}\n"
-    context += "\nContinue the conversation naturally. The user just said: "
-    return context
-
-def generate_response(query: str, session_id: str = None) -> str:
-    # Check if medical
-    if not is_medical_query(query):
-        return "💙 I'm a MEDICAL assistant. Please ask me health-related questions about blood pressure, diabetes, headaches, pain, fever, etc."
-    
-    # Get conversation history for context
+    # Get conversation history
     history = []
     if session_id:
         history = get_conversation_history(session_id, limit=10)
     
-    # Build context
-    context = build_context_from_history(history)
+    # Build conversation context
+    context = ""
+    if history:
+        context = "Previous conversation:\n"
+        for h in history[-8:]:  # Last 8 exchanges for context
+            context += f"User: {h['message']}\nAssistant: {h['response']}\n"
+        context += f"\nUser just said: {query}\n"
     
     if not co:
-        return get_fallback_response(query, history)
+        return get_smart_fallback(query, history)
     
     try:
-        if history:
-            # This is a follow-up question - use context
-            prompt = f"""You are MediBot AI, a compassionate medical assistant.
+        if context:
+            prompt = f"""You are MediBot AI, a warm, helpful medical assistant. Continue this conversation naturally.
 
-{context} "{query}"
+{context}
 
-Provide a helpful response that continues the conversation naturally.
-- Reference previous information if relevant
-- Answer the user's question directly
-- Be warm and conversational
+Instructions:
+- DO NOT start over - continue the conversation
+- Reference what the user said earlier
+- Answer directly without repeating previous information
+- Be conversational and helpful
 - Ask a relevant follow-up question
 
-Response:"""
+Your response:"""
         else:
-            # First question in conversation
-            prompt = f"""You are MediBot AI, a compassionate medical assistant.
+            prompt = f"""You are MediBot AI, a warm, helpful medical assistant.
 
 User: {query}
 
-Provide a helpful, accurate response. Use bullet points. End with a follow-up question.
+Provide a helpful, accurate response. Be conversational. End with a follow-up question.
 
 Response:"""
         
         response = co.chat(message=prompt, model="command-a-03-2025", temperature=0.7, max_tokens=500)
-        return response.text.strip() if response and response.text else get_fallback_response(query, history)
+        return response.text.strip() if response and response.text else get_smart_fallback(query, history)
     except Exception as e:
         print(f"Cohere error: {e}")
-        return get_fallback_response(query, history)
+        return get_smart_fallback(query, history)
 
-def get_fallback_response(query: str, history: List[Dict] = None) -> str:
-    """Fallback response with context awareness"""
+def get_smart_fallback(query: str, history: List[Dict]) -> str:
+    """Smart fallback that understands context"""
     q = query.lower()
     
-    # Check if this is a follow-up to leg pain discussion
+    # Check if this is a follow-up answer
     if history and len(history) > 0:
-        last_user_msg = history[-1]['message'].lower() if history else ""
-        if "leg pain" in last_user_msg or "leg" in last_user_msg:
-            if "no" in q:
-                return """Thanks for letting me know. Since you don't have swelling, redness, or numbness, the pain may be muscular.
+        last_user_msg = history[-1]['message'].lower()
+        
+        # Leg pain follow-up
+        if 'leg pain' in last_user_msg or 'leg' in last_user_msg:
+            if '4 days' in q or 'day' in q or 'week' in q:
+                return """Thanks for letting me know it's been 4 days. That's helpful information.
 
-**Here are some specific things you can try:**
+**Since you've had leg pain for 4 days, here's what I recommend:**
 
-1. **Rest** - Give your leg a break from strenuous activity
-2. **Ice** - Apply ice pack for 15-20 minutes, 3-4 times daily
-3. **Elevate** - Keep your leg raised above heart level
-4. **Gentle stretch** - Try calf stretches if it's your calf
+1. **Rest** - Avoid strenuous activity on that leg
+2. **Ice** - Apply ice for 15-20 minutes, 3-4 times daily
+3. **Elevate** - Keep leg raised when sitting/lying down
+4. **OTC pain reliever** - Ibuprofen or acetaminophen may help
 
-**When to see a doctor:**
-• Pain gets worse or doesn't improve in a few days
-• You can't put weight on your leg
-• New swelling or redness appears
+**You should see a doctor if:**
+• Pain gets worse
+• You can't walk normally
+• Swelling or redness appears
+• Pain doesn't improve in a few more days
 
-*Have you tried any of these yet?* 💙"""
-            elif "yes" in q:
-                return """I understand you're experiencing leg pain. Let me help you further.
+*Did this pain start after an injury or specific activity?* 💙"""
+            
+            elif 'no' in q:
+                return """Thanks for confirming no swelling or numbness. That's good news - it suggests the pain may be muscular rather than nerve-related.
 
-**To give you better advice, could you tell me:**
-• Where exactly does it hurt? (calf, thigh, knee, shin?)
-• What does the pain feel like? (sharp, dull, burning, throbbing?)
-• Did it start after an injury or activity?
+**Try these for the next 2-3 days:**
+• Rest the leg
+• Ice for 15-20 minutes, 3x daily
+• Gentle stretching if it feels tight
+• Over-the-counter pain reliever
 
-This will help me give you more specific guidance! 💙"""
+*On a scale of 1-10, how would you rate the pain?* 💙"""
+            
+            elif 'yes' in q:
+                return """I see. Since you have swelling or numbness with the leg pain, that's more concerning.
+
+**I recommend seeing a doctor soon because:**
+• Swelling + pain could indicate a strain or inflammation
+• Numbness might suggest nerve involvement
+
+**In the meantime:**
+• Keep the leg elevated
+• Apply ice if there's swelling
+• Avoid putting too much weight on it
+
+*Have you had any injury or started new exercise recently?* 💙"""
     
     # Default responses
-    if "blood pressure" in q:
-        return "**Blood Pressure Guide**\n\nNormal: <120/80 mmHg\nElevated: 120-129/<80\nStage 1: 130-139/80-89\nStage 2: 140+/90+\n\n*Have you been monitoring your blood pressure?*"
-    elif "headache" in q:
-        return "**Headache Relief**\n\n• Rest in dark, quiet room\n• Stay hydrated\n• Cold compress\n• OTC pain reliever\n\n*What usually triggers your headaches?*"
-    elif "diabetes" in q:
-        return "**Diabetes Management**\n\n• Monitor blood sugar\n• Take medications as prescribed\n• Healthy diet\n• Exercise 30 min/day\n\n*Would you like meal planning tips?*"
-    else:
-        return "I'm here to help with medical questions. Could you tell me more about what you're experiencing?"
+    if 'leg pain' in q:
+        return """I'm sorry to hear about your leg pain. Let me help you figure this out.
 
-app = FastAPI(title="MediBot AI", version="4.0")
+**To give you the best advice, could you tell me:**
+• How long have you had the pain?
+• Is it sharp, dull, or throbbing?
+• Any swelling, redness, or numbness?
+• Did it start after an injury or activity?
+
+This will help me understand what might be going on! 💙"""
+    
+    elif 'blood pressure' in q:
+        return "**Blood Pressure Guide**\n\nNormal: <120/80\nElevated: 120-129/<80\nStage 1: 130-139/80-89\nStage 2: 140+/90+\n\n*Have you been monitoring your BP at home?*"
+    
+    elif 'headache' in q:
+        return "**Headache Relief**\n\n• Rest in dark, quiet room\n• Stay hydrated\n• Cold compress on forehead\n\n*What usually triggers your headaches?*"
+    
+    else:
+        return f"I'm here to help with health questions. Could you tell me more about '{query[:50]}'?"
+
+app = FastAPI(title="MediBot AI", version="5.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
@@ -237,7 +258,7 @@ async def login(user: UserLogin):
 @app.post("/chat")
 async def chat(request: ChatRequest, token_data: dict = Depends(verify_token)):
     session_id = request.session_id or f"session_{int(datetime.now().timestamp())}"
-    response = generate_response(request.message, session_id)
+    response = generate_response_with_memory(request.message, session_id)
     
     conversations_collection.insert_one({
         "user_id": token_data.get("user_id"),
@@ -259,7 +280,7 @@ async def get_history(session_id: str, token_data: dict = Depends(verify_token))
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("🏥 MEDIBOT AI - WITH CONVERSATION MEMORY")
+    print("🏥 MEDIBOT AI - WITH PROPER MEMORY")
     print("="*60)
     print("Server: http://localhost:10000")
     print("="*60 + "\n")
