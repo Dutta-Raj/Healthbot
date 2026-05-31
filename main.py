@@ -18,8 +18,11 @@ import uvicorn
 load_dotenv()
 
 # MongoDB Connection
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://Rajnew2004:Raj%402004@cluster0.qs43zoc.mongodb.net/healthbot')
+MONGODB_URI = os.getenv('MONGODB_URI')
 DATABASE_NAME = os.getenv('DATABASE_NAME', 'healthbot')
+if not MONGODB_URI:
+    raise ValueError("MONGODB_URI environment variable not set")
+
 client = MongoClient(MONGODB_URI)
 db = client[DATABASE_NAME]
 users_collection = db['users']
@@ -27,7 +30,7 @@ conversations_collection = db['conversations']
 print("✅ MongoDB Connected")
 
 # Cohere AI
-COHERE_API_KEY = os.getenv('COHERE_API_KEY', '9YyBJ7fTJqXtgQsYwfYNoMlDqKVsIOqspwQEzBa1')
+COHERE_API_KEY = os.getenv('COHERE_API_KEY')
 co = None
 if COHERE_API_KEY:
     try:
@@ -35,6 +38,8 @@ if COHERE_API_KEY:
         print("✅ Cohere AI Ready")
     except Exception as e:
         print(f"⚠️ Cohere error: {e}")
+else:
+    print("⚠️ COHERE_API_KEY not set")
 
 # JWT Settings
 SECRET_KEY = os.getenv('SECRET_KEY', 'medibot-secret-key-2026')
@@ -158,11 +163,9 @@ async def health():
 # Authentication Endpoints
 @app.post("/auth/register")
 async def register(user: UserRegister):
-    # Check if user exists
     if users_collection.find_one({"$or": [{"username": user.username}, {"email": user.email}]}):
         raise HTTPException(400, "Username or email already exists")
     
-    # Create user
     user_doc = {
         "username": user.username,
         "email": user.email,
@@ -171,19 +174,15 @@ async def register(user: UserRegister):
         "created_at": datetime.now()
     }
     result = users_collection.insert_one(user_doc)
-    
-    # Create token
     token = create_token({"sub": user.username, "user_id": str(result.inserted_id)})
     return {"access_token": token, "token_type": "bearer", "username": user.username}
 
 @app.post("/auth/login")
 async def login(user: UserLogin):
-    # Find user
     db_user = users_collection.find_one({"username": user.username})
     if not db_user or not verify_password(user.password, db_user["password"]):
         raise HTTPException(401, "Invalid credentials")
     
-    # Create token
     token = create_token({"sub": db_user["username"], "user_id": str(db_user["_id"])})
     return {"access_token": token, "token_type": "bearer", "username": db_user["username"]}
 
@@ -193,7 +192,6 @@ async def chat(request: ChatRequest, token_data: dict = Depends(verify_token)):
     session_id = request.session_id or f"session_{int(datetime.now().timestamp())}"
     response = generate_response(request.message, session_id)
     
-    # Save conversation
     conversations_collection.insert_one({
         "user_id": token_data.get("user_id"),
         "session_id": session_id,
