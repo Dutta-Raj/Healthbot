@@ -91,7 +91,7 @@ def is_medical_query(query: str) -> bool:
     ]
     return any(kw in query.lower() for kw in medical_keywords)
 
-async def get_conversation_history(session_id: str, limit: int = 5):
+def get_conversation_history(session_id: str, limit: int = 5):
     history = list(conversations_collection.find(
         {"session_id": session_id},
         {"_id": 0, "message": 1, "response": 1}
@@ -99,7 +99,7 @@ async def get_conversation_history(session_id: str, limit: int = 5):
     history.reverse()
     return history
 
-async function generate_response(query: str, session_id: str = None) -> str:
+def generate_response(query: str, session_id: str = None) -> str:
     if not is_medical_query(query):
         return "💙 I'm a MEDICAL assistant. Please ask me health-related questions."
     
@@ -109,7 +109,7 @@ async function generate_response(query: str, session_id: str = None) -> str:
     try:
         context = ""
         if session_id:
-            history = await get_conversation_history(session_id, limit=3)
+            history = get_conversation_history(session_id, limit=3)
             if history:
                 context = "Previous conversation:\n"
                 for h in history:
@@ -135,6 +135,8 @@ def get_fallback_response(query: str) -> str:
         return "**Headache Relief:** Rest in dark room, hydrate, cold compress."
     elif "diabetes" in q:
         return "**Diabetes Management:** Monitor blood sugar, healthy diet, exercise."
+    elif "fever" in q:
+        return "**Fever Care:** Rest, hydrate, fever reducers. Seek care if >103°F."
     else:
         return "I'm here to help with medical questions. Please consult a healthcare professional."
 
@@ -189,7 +191,7 @@ async def login(user: UserLogin):
 @app.post("/chat")
 async def chat(request: ChatRequest, token_data: dict = Depends(verify_token)):
     session_id = request.session_id or f"session_{int(datetime.now().timestamp())}"
-    response = await generate_response(request.message, session_id)
+    response = generate_response(request.message, session_id)
     
     conversations_collection.insert_one({
         "user_id": token_data.get("user_id"),
