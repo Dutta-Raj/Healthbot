@@ -21,18 +21,18 @@ A production-ready Medical Chatbot with RAG, Kafka Event-Driven Architecture, Co
 
 ## 🛠️ Tech Stack
 
+
 | Category | Technologies |
 |----------|--------------|
-| Backend | FastAPI, Python 3.10+ |
-| Database | MongoDB Atlas |
-| Vector DB | ChromaDB |
-| AI/LLM | Cohere API |
-| Message Queue | Apache Kafka |
-| Authentication | JWT + bcrypt |
-| Frontend | HTML/CSS/JS |
-| CI/CD | GitHub Actions |
-| Deployment | Render |
-
+| **Backend** | FastAPI, Python 3.10+ |
+| **Database** | MongoDB Atlas |
+| **Vector DB** | ChromaDB |
+| **AI/LLM** | Cohere API |
+| **Message Queue** | Apache Kafka |
+| **Authentication** | JWT + bcrypt |
+| **Frontend** | HTML/CSS/JS + Three.js (3D) |
+| **CI/CD** | GitHub Actions |
+| **Deployment** | Render |
 ---
 
 ## 📁 Project Structure
