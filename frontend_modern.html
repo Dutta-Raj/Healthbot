@@ -1,0 +1,1047 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot AI - Intelligent Medical Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Auth Container */
+        .auth-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .auth-box {
+            background: white;
+            border-radius: 24px;
+            padding: 40px;
+            width: 420px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+            animation: slideUp 0.5s ease;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .auth-box h2 {
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 30px;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .auth-box input {
+            width: 100%;
+            padding: 14px 16px;
+            margin: 10px 0;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 14px;
+            transition: all 0.3s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .auth-box input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+
+        .auth-box button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .auth-box button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102,126,234,0.3);
+        }
+
+        .auth-switch {
+            text-align: center;
+            margin-top: 20px;
+            color: #6b7280;
+        }
+
+        .auth-switch a {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        /* Main App */
+        .app-container {
+            display: none;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: white;
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            box-shadow: 2px 0 20px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .sidebar-header h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .new-chat-btn:hover {
+            background: rgba(255,255,255,0.25);
+            transform: translateY(-1px);
+        }
+
+        .conversations-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+
+        .conversation-item {
+            padding: 14px;
+            margin: 6px 0;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #f9fafb;
+            position: relative;
+        }
+
+        .conversation-item:hover {
+            background: #f3f4f6;
+        }
+
+        .conversation-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .conversation-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            padding-right: 30px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .conversation-time {
+            font-size: 11px;
+            opacity: 0.6;
+        }
+
+        /* 3 Dots Menu */
+        .menu-dots {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: background 0.2s;
+            z-index: 10;
+        }
+
+        .menu-dots:hover {
+            background: rgba(0,0,0,0.08);
+        }
+
+        .conversation-item.active .menu-dots:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Dropdown Menu */
+        .dropdown-menu {
+            position: absolute;
+            right: 12px;
+            top: 85%;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.02);
+            z-index: 200;
+            display: none;
+            min-width: 140px;
+            overflow: hidden;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .conversation-item.active .dropdown-menu {
+            background: #1f2937;
+        }
+
+        .dropdown-menu.show {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .dropdown-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #374151;
+        }
+
+        .conversation-item.active .dropdown-item {
+            color: #e5e7eb;
+        }
+
+        .dropdown-item:hover {
+            background: #f3f4f6;
+        }
+
+        .conversation-item.active .dropdown-item:hover {
+            background: #374151;
+        }
+
+        .dropdown-item.delete {
+            color: #dc2626;
+        }
+
+        .conversation-item.active .dropdown-item.delete {
+            color: #f87171;
+        }
+
+        /* Main Chat Area */
+        .main-chat {
+            margin-left: 320px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+        }
+
+        .chat-header {
+            background: white;
+            padding: 20px 32px;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h2 {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .user-info span {
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        .logout-btn {
+            padding: 8px 20px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: #dc2626;
+            transform: translateY(-1px);
+        }
+
+        /* Messages Area */
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 32px;
+            background: #fafbfc;
+        }
+
+        .message {
+            margin-bottom: 24px;
+            animation: messageSlideIn 0.3s ease;
+        }
+
+        @keyframes messageSlideIn {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 70%;
+            padding: 14px 20px;
+            border-radius: 20px;
+            position: relative;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .message.bot .message-content {
+            background: white;
+            color: #1f2937;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 5px;
+        }
+
+        .message-time {
+            font-size: 10px;
+            margin-top: 6px;
+            opacity: 0.5;
+        }
+
+        .ai-badge {
+            font-size: 10px;
+            margin-top: 4px;
+            opacity: 0.6;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Input Area */
+        .input-area {
+            background: white;
+            padding: 20px 32px;
+            border-top: 1px solid #f0f0f0;
+        }
+
+        .typing-indicator {
+            display: none;
+            padding: 10px 16px;
+            background: #f3f4f6;
+            border-radius: 20px;
+            width: fit-content;
+            margin-bottom: 12px;
+        }
+
+        .typing-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            margin: 0 3px;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 14px 18px;
+            border: 2px solid #e5e7eb;
+            border-radius: 16px;
+            resize: none;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+
+        .send-btn {
+            padding: 12px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.3);
+        }
+
+        /* Modals */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 28px;
+            width: 380px;
+            text-align: center;
+            animation: slideUp 0.3s ease;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 16px;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            margin: 16px 0;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .modal-buttons button {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #9ca3af;
+            color: white;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c7d2fe;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a5b4fc;
+        }
+    </style>
+</head>
+<body>
+    <!-- Auth Container -->
+    <div class="auth-container" id="authContainer">
+        <div class="auth-box">
+            <h2><i class="fas fa-robot"></i> HealthBot AI</h2>
+            <div id="loginForm">
+                <input type="text" id="loginUsername" placeholder="Username" />
+                <input type="password" id="loginPassword" placeholder="Password" />
+                <button onclick="login()"><i class="fas fa-sign-in-alt"></i> Login</button>
+                <div class="auth-switch">
+                    New here? <a onclick="showRegister()">Create account</a>
+                </div>
+            </div>
+            <div id="registerForm" style="display:none;">
+                <input type="text" id="regUsername" placeholder="Username" />
+                <input type="email" id="regEmail" placeholder="Email" />
+                <input type="password" id="regPassword" placeholder="Password" />
+                <input type="text" id="regFullName" placeholder="Full Name" />
+                <button onclick="register()"><i class="fas fa-user-plus"></i> Register</button>
+                <div class="auth-switch">
+                    <a onclick="showLogin()"><i class="fas fa-arrow-left"></i> Back to Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="app-container" id="appContainer">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3><i class="fas fa-stethoscope"></i> HealthBot AI</h3>
+                <button class="new-chat-btn" onclick="createNewChat()"><i class="fas fa-plus"></i> New Chat</button>
+            </div>
+            <div class="conversations-list" id="conversationsList"></div>
+        </div>
+
+        <div class="main-chat">
+            <div class="chat-header">
+                <h2 id="currentChatTitle"><i class="fas fa-comment-dots"></i> HealthBot Assistant</h2>
+                <div class="user-info">
+                    <span><i class="fas fa-user-circle"></i> <span id="currentUsername"></span></span>
+                    <button class="logout-btn" onclick="logout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+                </div>
+            </div>
+
+            <div class="messages-area" id="messagesArea">
+                <div class="message bot">
+                    <div class="message-content">
+                        <i class="fas fa-robot"></i> Hello! I'm HealthBot AI, your intelligent medical assistant. How can I help you today?
+                        <div class="message-time" id="welcomeTime"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="typing-indicator" id="typingIndicator">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </div>
+                <div class="input-container">
+                    <textarea class="message-input" id="messageInput" placeholder="Ask me anything about health..." rows="1"></textarea>
+                    <button class="send-btn" onclick="sendMessage()"><i class="fas fa-paper-plane"></i> Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Modal -->
+    <div class="modal" id="deleteModal">
+        <div class="modal-content">
+            <h3><i class="fas fa-trash-alt"></i> Delete Conversation</h3>
+            <p>Are you sure you want to delete this conversation?<br>This action cannot be undone.</p>
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+                <button class="btn-danger" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rename Modal -->
+    <div class="modal" id="renameModal">
+        <div class="modal-content">
+            <h3><i class="fas fa-edit"></i> Rename Conversation</h3>
+            <input type="text" id="renameInput" placeholder="Enter new name" />
+            <div class="modal-buttons">
+                <button class="btn-secondary" onclick="closeRenameModal()">Cancel</button>
+                <button class="btn-primary" onclick="confirmRename()">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = null;
+        let currentUser = null;
+        let currentConversationId = null;
+        let conversations = [];
+        let pendingDeleteId = null;
+        let pendingRenameId = null;
+
+        const API_URL = 'http://localhost:8000';
+
+        document.getElementById('welcomeTime').innerText = new Date().toLocaleTimeString();
+
+        document.getElementById('messageInput').addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+        });
+
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.menu-dots') && !e.target.closest('.dropdown-menu')) {
+                closeAllMenus();
+            }
+        });
+
+        function closeAllMenus() {
+            document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                menu.classList.remove('show');
+            });
+        }
+
+        function toggleMenu(event, id) {
+            event.stopPropagation();
+            closeAllMenus();
+            const menu = document.getElementById(`menu-${id}`);
+            if (menu) menu.classList.add('show');
+        }
+
+        // Auth Functions
+        async function register() {
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const full_name = document.getElementById('regFullName').value;
+
+            if (!username || !email || !password) {
+                alert('Please fill all required fields');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password, full_name })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    alert('Registration successful! Please login.');
+                    showLogin();
+                } else {
+                    alert('Registration failed: ' + data.detail);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+
+            if (!username || !password) {
+                alert('Please enter username and password');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    authToken = data.access_token;
+                    currentUser = data.username;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('username', currentUser);
+                    
+                    document.getElementById('currentUsername').innerText = currentUser;
+                    document.getElementById('authContainer').style.display = 'none';
+                    document.getElementById('appContainer').style.display = 'block';
+                    
+                    await loadConversations();
+                    if (conversations.length === 0) createNewChat();
+                    else selectConversation(conversations[0].id);
+                } else {
+                    alert('Login failed: ' + data.detail);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function logout() {
+            authToken = null;
+            currentUser = null;
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('username');
+            document.getElementById('authContainer').style.display = 'flex';
+            document.getElementById('appContainer').style.display = 'none';
+        }
+
+        function showRegister() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('registerForm').style.display = 'block';
+        }
+
+        function showLogin() {
+            document.getElementById('registerForm').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+        }
+
+        // Conversation Management
+        async function loadConversations() {
+            const saved = localStorage.getItem(`conversations_${currentUser}`);
+            if (saved) conversations = JSON.parse(saved);
+            renderConversations();
+        }
+
+        function saveConversations() {
+            localStorage.setItem(`conversations_${currentUser}`, JSON.stringify(conversations));
+        }
+
+        function showRenameModal(id) {
+            pendingRenameId = id;
+            closeAllMenus();
+            document.getElementById('renameModal').style.display = 'flex';
+        }
+
+        function closeRenameModal() {
+            document.getElementById('renameModal').style.display = 'none';
+            pendingRenameId = null;
+            document.getElementById('renameInput').value = '';
+        }
+
+        function confirmRename() {
+            const newName = document.getElementById('renameInput').value;
+            if (pendingRenameId && newName && newName.trim()) {
+                const conv = conversations.find(c => c.id === pendingRenameId);
+                if (conv) {
+                    conv.title = newName.trim();
+                    saveConversations();
+                    renderConversations();
+                    if (currentConversationId === pendingRenameId) {
+                        document.getElementById('currentChatTitle').innerHTML = `<i class="fas fa-comment-dots"></i> ${conv.title}`;
+                    }
+                }
+            }
+            closeRenameModal();
+        }
+
+        function togglePin(id) {
+            const conv = conversations.find(c => c.id === id);
+            if (conv) {
+                conv.pinned = !conv.pinned;
+                saveConversations();
+                renderConversations();
+            }
+            closeAllMenus();
+        }
+
+        function showDeleteConfirm(id) {
+            pendingDeleteId = id;
+            closeAllMenus();
+            document.getElementById('deleteModal').style.display = 'flex';
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').style.display = 'none';
+            pendingDeleteId = null;
+        }
+
+        function confirmDelete() {
+            if (pendingDeleteId) {
+                const index = conversations.findIndex(c => c.id === pendingDeleteId);
+                if (index !== -1) {
+                    conversations.splice(index, 1);
+                    saveConversations();
+                    if (currentConversationId === pendingDeleteId) {
+                        if (conversations.length > 0) selectConversation(conversations[0].id);
+                        else createNewChat();
+                    }
+                    renderConversations();
+                }
+            }
+            closeDeleteModal();
+        }
+
+        function renderConversations() {
+            const container = document.getElementById('conversationsList');
+            const sorted = [...conversations].sort((a, b) => {
+                if (a.pinned && !b.pinned) return -1;
+                if (!a.pinned && b.pinned) return 1;
+                return new Date(b.timestamp) - new Date(a.timestamp);
+            });
+            
+            container.innerHTML = sorted.map(conv => `
+                <div class="conversation-item ${conv.id === currentConversationId ? 'active' : ''}" onclick="selectConversation('${conv.id}')">
+                    <div class="conversation-title">
+                        ${escapeHtml(conv.title)} ${conv.pinned ? '<i class="fas fa-thumbtack"></i>' : ''}
+                    </div>
+                    <div class="conversation-time">
+                        <i class="far fa-clock"></i> ${formatTime(conv.timestamp)}
+                    </div>
+                    <div class="menu-dots" onclick="toggleMenu(event, '${conv.id}')">
+                        <i class="fas fa-ellipsis-v"></i>
+                    </div>
+                    <div class="dropdown-menu" id="menu-${conv.id}">
+                        <div class="dropdown-item" onclick="event.stopPropagation(); showRenameModal('${conv.id}')">
+                            <i class="fas fa-edit"></i> Rename
+                        </div>
+                        <div class="dropdown-item" onclick="event.stopPropagation(); togglePin('${conv.id}')">
+                            <i class="fas ${conv.pinned ? 'fa-thumbtack-slash' : 'fa-thumbtack'}"></i> ${conv.pinned ? 'Unpin' : 'Pin'}
+                        </div>
+                        <div class="dropdown-item delete" onclick="event.stopPropagation(); showDeleteConfirm('${conv.id}')">
+                            <i class="fas fa-trash-alt"></i> Delete
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function createNewChat() {
+            const newId = Date.now().toString();
+            currentConversationId = newId;
+            conversations.unshift({
+                id: newId,
+                title: 'New Conversation',
+                messages: [],
+                timestamp: new Date().toISOString(),
+                pinned: false
+            });
+            saveConversations();
+            renderConversations();
+            
+            document.getElementById('messagesArea').innerHTML = `
+                <div class="message bot">
+                    <div class="message-content">
+                        <i class="fas fa-robot"></i> Hello! I'm HealthBot AI, your intelligent medical assistant. How can I help you today?
+                        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('currentChatTitle').innerHTML = `<i class="fas fa-comment-dots"></i> New Conversation`;
+        }
+
+        function selectConversation(id) {
+            currentConversationId = id;
+            const conv = conversations.find(c => c.id === id);
+            if (conv) {
+                document.getElementById('currentChatTitle').innerHTML = `<i class="fas fa-comment-dots"></i> ${conv.title}`;
+                const messagesArea = document.getElementById('messagesArea');
+                messagesArea.innerHTML = '';
+                
+                if (conv.messages && conv.messages.length > 0) {
+                    conv.messages.forEach(msg => {
+                        addMessageToUI(msg.isUser ? 'user' : 'bot', msg.isUser ? msg.text : msg.response, msg.timestamp);
+                    });
+                } else {
+                    messagesArea.innerHTML = `
+                        <div class="message bot">
+                            <div class="message-content">
+                                <i class="fas fa-robot"></i> Hello! I'm HealthBot AI, your intelligent medical assistant. How can I help you today?
+                                <div class="message-time">${new Date().toLocaleTimeString()}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+                renderConversations();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message || !authToken) return;
+            
+            const timestamp = new Date().toISOString();
+            addMessageToUI('user', message, timestamp);
+            input.value = '';
+            input.style.height = 'auto';
+            
+            document.getElementById('typingIndicator').style.display = 'block';
+            
+            const conv = conversations.find(c => c.id === currentConversationId);
+            if (conv) {
+                if (!conv.messages) conv.messages = [];
+                conv.messages.push({ text: message, response: null, timestamp, isUser: true });
+                if (conv.title === 'New Conversation' && conv.messages.length === 1) {
+                    conv.title = message.substring(0, 30) + (message.length > 30 ? '...' : '');
+                    document.getElementById('currentChatTitle').innerHTML = `<i class="fas fa-comment-dots"></i> ${conv.title}`;
+                }
+                saveConversations();
+                renderConversations();
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ message, session_id: currentConversationId })
+                });
+                
+                const data = await response.json();
+                document.getElementById('typingIndicator').style.display = 'none';
+                
+                const responseTimestamp = new Date().toISOString();
+                addMessageToUI('bot', data.response, responseTimestamp);
+                
+                if (conv) {
+                    conv.messages[conv.messages.length - 1].response = data.response;
+                    conv.messages[conv.messages.length - 1].responseTimestamp = responseTimestamp;
+                    conv.timestamp = responseTimestamp;
+                    saveConversations();
+                    renderConversations();
+                }
+            } catch (error) {
+                document.getElementById('typingIndicator').style.display = 'none';
+                addMessageToUI('bot', 'Sorry, I encountered an error. Please try again.', new Date().toISOString());
+            }
+        }
+
+        function addMessageToUI(role, content, timestamp) {
+            const messagesArea = document.getElementById('messagesArea');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            messageDiv.innerHTML = `
+                <div class="message-content">
+                    ${role === 'bot' ? '<i class="fas fa-robot"></i> ' : '<i class="fas fa-user"></i> '}
+                    ${escapeHtml(content)}
+                    <div class="message-time"><i class="far fa-clock"></i> ${new Date(timestamp).toLocaleTimeString()}</div>
+                    ${role === 'bot' ? '<div class="ai-badge"><i class="fas fa-microchip"></i> AI Generated</div>' : ''}
+                </div>
+            `;
+            messagesArea.appendChild(messageDiv);
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diff = now - date;
+            
+            if (diff < 60000) return 'Just now';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)} min ago`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`;
+            return date.toLocaleDateString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Check saved session
+        const savedToken = localStorage.getItem('authToken');
+        const savedUsername = localStorage.getItem('username');
+        if (savedToken && savedUsername) {
+            authToken = savedToken;
+            currentUser = savedUsername;
+            document.getElementById('currentUsername').innerText = currentUser;
+            document.getElementById('authContainer').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'block';
+            loadConversations().then(() => {
+                if (conversations.length === 0) createNewChat();
+                else selectConversation(conversations[0].id);
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,981 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot AI - Secure Medical Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .animated-bg {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .floating-heart {
+            position: absolute;
+            font-size: 20px;
+            animation: floatHeart linear infinite;
+            opacity: 0.3;
+        }
+
+        @keyframes floatHeart {
+            0% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 0.3;
+            }
+            90% {
+                opacity: 0.3;
+            }
+            100% {
+                transform: translateY(-100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* Auth Container */
+        .auth-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: all 0.5s ease;
+        }
+
+        .auth-box {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            width: 450px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .auth-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .auth-header h2 {
+            color: #667eea;
+            font-size: 28px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-group input.error {
+            border-color: #e53e3e;
+        }
+
+        .password-strength {
+            margin-top: 5px;
+            font-size: 12px;
+        }
+
+        .strength-weak { color: #e53e3e; }
+        .strength-medium { color: #ed8936; }
+        .strength-strong { color: #38a169; }
+
+        .auth-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .auth-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .auth-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .switch-auth {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
+
+        .switch-auth a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .forgot-password {
+            text-align: right;
+            margin-top: 10px;
+        }
+
+        .forgot-password a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .error-msg {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .success-msg {
+            background: #e6fffa;
+            color: #38a169;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        /* Main Dashboard */
+        .dashboard-container {
+            display: none;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .sidebar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+
+        .user-info {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .avatar {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            margin: 0 auto 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+        }
+
+        .logout-btn {
+            width: 100%;
+            padding: 10px;
+            background: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .main-content {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f7f9fc;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .user-message {
+            justify-content: flex-end;
+        }
+
+        .bot-message {
+            justify-content: flex-start;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 20px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .user-message .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .bot-message .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 20px;
+            background: white;
+            border-radius: 15px;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .voice-btn {
+            padding: 12px 20px;
+            background: #4a5568;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+        }
+
+        .voice-btn.listening {
+            background: #e53e3e;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        #send-button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+        }
+
+        .typing-indicator {
+            display: inline-flex;
+            gap: 5px;
+            padding: 12px 18px;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite;
+        }
+
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+    <div class="animated-bg" id="animated-bg"></div>
+
+    <!-- Authentication Container -->
+    <div class="auth-container" id="auth-container">
+        <div class="auth-box">
+            <div class="auth-header">
+                <h2>🏥 HealthBot AI</h2>
+                <p>Secure Medical Assistant</p>
+            </div>
+            
+            <!-- Login Form -->
+            <div id="login-form">
+                <div id="login-error" class="error-msg"></div>
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" id="login-email" placeholder="Enter your email">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="login-password" placeholder="Enter your password">
+                </div>
+                <div class="forgot-password">
+                    <a onclick="showForgotPassword()">Forgot Password?</a>
+                </div>
+                <button class="auth-btn" onclick="handleLogin()">Login</button>
+                <div class="switch-auth">
+                    Don't have an account? <a onclick="showSignup()">Sign up</a>
+                </div>
+            </div>
+            
+            <!-- Signup Form -->
+            <div id="signup-form" style="display: none;">
+                <div id="signup-error" class="error-msg"></div>
+                <div class="input-group">
+                    <label>Full Name</label>
+                    <input type="text" id="signup-name" placeholder="Enter your name">
+                </div>
+                <div class="input-group">
+                    <label>Email</label>
+                    <input type="email" id="signup-email" placeholder="Enter your email">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="signup-password" placeholder="Create a password" onkeyup="checkPasswordStrength()">
+                    <div class="password-strength" id="password-strength"></div>
+                </div>
+                <div class="input-group">
+                    <label>Confirm Password</label>
+                    <input type="password" id="signup-confirm-password" placeholder="Re-enter your password" onkeyup="checkPasswordMatch()">
+                    <div class="password-strength" id="password-match"></div>
+                </div>
+                <button class="auth-btn" onclick="handleSignup()" id="signup-btn">Sign Up</button>
+                <div class="switch-auth">
+                    Already have an account? <a onclick="showLogin()">Login</a>
+                </div>
+            </div>
+
+            <!-- Forgot Password Form -->
+            <div id="forgot-password-form" style="display: none;">
+                <div id="forgot-error" class="error-msg"></div>
+                <div id="forgot-success" class="success-msg"></div>
+                <div class="input-group">
+                    <label>Email Address</label>
+                    <input type="email" id="forgot-email" placeholder="Enter your registered email">
+                </div>
+                <button class="auth-btn" onclick="handleForgotPassword()">Send Reset Link</button>
+                <div class="switch-auth">
+                    <a onclick="showLogin()">Back to Login</a>
+                </div>
+            </div>
+
+            <!-- Reset Password Form -->
+            <div id="reset-password-form" style="display: none;">
+                <div id="reset-error" class="error-msg"></div>
+                <div id="reset-success" class="success-msg"></div>
+                <div class="input-group">
+                    <label>New Password</label>
+                    <input type="password" id="reset-password" placeholder="Enter new password" onkeyup="checkResetPasswordStrength()">
+                    <div class="password-strength" id="reset-strength"></div>
+                </div>
+                <div class="input-group">
+                    <label>Confirm New Password</label>
+                    <input type="password" id="reset-confirm-password" placeholder="Confirm new password" onkeyup="checkResetPasswordMatch()">
+                    <div class="password-strength" id="reset-match"></div>
+                </div>
+                <button class="auth-btn" onclick="handleResetPassword()">Reset Password</button>
+                <div class="switch-auth">
+                    <a onclick="showLogin()">Back to Login</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div class="dashboard-container" id="dashboard">
+        <div class="sidebar">
+            <div class="user-info">
+                <div class="avatar">👤</div>
+                <h3 id="user-name">User</h3>
+                <p id="user-email"></p>
+            </div>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+
+        <div class="main-content">
+            <div class="chat-area" id="chat-area">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        👋 Welcome to HealthBot AI!<br><br>
+                        I'm your secure medical assistant. How can I help you today?
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="Type your health question here...">
+                <button class="voice-btn" id="voice-btn" onclick="toggleVoiceInput()">🎤 Voice</button>
+                <button id="send-button" onclick="sendMessage()">Send 📤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let token = localStorage.getItem('token');
+        let currentUser = null;
+        let conversationId = 'conv_' + Date.now();
+        let recognition = null;
+        let isListening = false;
+        let resetToken = null;
+
+        // Initialize speech recognition
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('message-input').value = transcript;
+                stopVoiceInput();
+                sendMessage();
+            };
+            
+            recognition.onerror = function(event) {
+                console.error('Speech recognition error:', event.error);
+                stopVoiceInput();
+            };
+            
+            recognition.onend = function() {
+                stopVoiceInput();
+            };
+        }
+
+        // Check if user is already logged in
+        if (token) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                currentUser = payload;
+                document.getElementById('user-name').textContent = payload.name || 'User';
+                document.getElementById('user-email').textContent = payload.email;
+                showDashboard();
+            } catch(e) {
+                localStorage.removeItem('token');
+            }
+        }
+
+        // Password strength checker
+        function checkPasswordStrength() {
+            const password = document.getElementById('signup-password').value;
+            const strengthDiv = document.getElementById('password-strength');
+            
+            let strength = 0;
+            if (password.length >= 8) strength++;
+            if (password.match(/[a-z]+/)) strength++;
+            if (password.match(/[A-Z]+/)) strength++;
+            if (password.match(/[0-9]+/)) strength++;
+            if (password.match(/[$@#&!]+/)) strength++;
+            
+            let strengthText = '';
+            let strengthClass = '';
+            
+            if (password.length === 0) {
+                strengthText = '';
+            } else if (strength <= 2) {
+                strengthText = 'Weak password';
+                strengthClass = 'strength-weak';
+            } else if (strength <= 4) {
+                strengthText = 'Medium password';
+                strengthClass = 'strength-medium';
+            } else {
+                strengthText = 'Strong password';
+                strengthClass = 'strength-strong';
+            }
+            
+            strengthDiv.innerHTML = <span class=""></span>;
+            checkPasswordMatch();
+        }
+
+        function checkPasswordMatch() {
+            const password = document.getElementById('signup-password').value;
+            const confirm = document.getElementById('signup-confirm-password').value;
+            const matchDiv = document.getElementById('password-match');
+            const signupBtn = document.getElementById('signup-btn');
+            
+            if (confirm.length === 0) {
+                matchDiv.innerHTML = '';
+                signupBtn.disabled = false;
+                return;
+            }
+            
+            if (password === confirm) {
+                matchDiv.innerHTML = '<span style="color: #38a169;">✓ Passwords match</span>';
+                signupBtn.disabled = false;
+            } else {
+                matchDiv.innerHTML = '<span style="color: #e53e3e;">✗ Passwords do not match</span>';
+                signupBtn.disabled = true;
+            }
+        }
+
+        function checkResetPasswordStrength() {
+            const password = document.getElementById('reset-password').value;
+            const strengthDiv = document.getElementById('reset-strength');
+            
+            let strength = 0;
+            if (password.length >= 8) strength++;
+            if (password.match(/[a-z]+/)) strength++;
+            if (password.match(/[A-Z]+/)) strength++;
+            if (password.match(/[0-9]+/)) strength++;
+            if (password.match(/[$@#&!]+/)) strength++;
+            
+            let strengthText = '';
+            let strengthClass = '';
+            
+            if (password.length === 0) {
+                strengthText = '';
+            } else if (strength <= 2) {
+                strengthText = 'Weak password';
+                strengthClass = 'strength-weak';
+            } else if (strength <= 4) {
+                strengthText = 'Medium password';
+                strengthClass = 'strength-medium';
+            } else {
+                strengthText = 'Strong password';
+                strengthClass = 'strength-strong';
+            }
+            
+            strengthDiv.innerHTML = <span class=""></span>;
+            checkResetPasswordMatch();
+        }
+
+        function checkResetPasswordMatch() {
+            const password = document.getElementById('reset-password').value;
+            const confirm = document.getElementById('reset-confirm-password').value;
+            const matchDiv = document.getElementById('reset-match');
+            
+            if (confirm.length === 0) {
+                matchDiv.innerHTML = '';
+                return;
+            }
+            
+            if (password === confirm) {
+                matchDiv.innerHTML = '<span style="color: #38a169;">✓ Passwords match</span>';
+            } else {
+                matchDiv.innerHTML = '<span style="color: #e53e3e;">✗ Passwords do not match</span>';
+            }
+        }
+
+        function showLogin() {
+            document.getElementById('login-form').style.display = 'block';
+            document.getElementById('signup-form').style.display = 'none';
+            document.getElementById('forgot-password-form').style.display = 'none';
+            document.getElementById('reset-password-form').style.display = 'none';
+        }
+
+        function showSignup() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('signup-form').style.display = 'block';
+            document.getElementById('forgot-password-form').style.display = 'none';
+            document.getElementById('reset-password-form').style.display = 'none';
+        }
+
+        function showForgotPassword() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('signup-form').style.display = 'none';
+            document.getElementById('forgot-password-form').style.display = 'block';
+            document.getElementById('reset-password-form').style.display = 'none';
+        }
+
+        function showResetPassword() {
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('signup-form').style.display = 'none';
+            document.getElementById('forgot-password-form').style.display = 'none';
+            document.getElementById('reset-password-form').style.display = 'block';
+        }
+
+        async function handleLogin() {
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            
+            if (!email || !password) {
+                showError('login-error', 'Please enter email and password');
+                return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:8000/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.token);
+                    currentUser = data.user;
+                    document.getElementById('user-name').textContent = data.user.name;
+                    document.getElementById('user-email').textContent = data.user.email;
+                    showDashboard();
+                } else {
+                    showError('login-error', 'Invalid credentials');
+                }
+            } catch (error) {
+                showError('login-error', 'Server error. Please try again.');
+            }
+        }
+
+        async function handleSignup() {
+            const name = document.getElementById('signup-name').value;
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const confirmPassword = document.getElementById('signup-confirm-password').value;
+            
+            if (!name || !email || !password) {
+                showError('signup-error', 'Please fill all fields');
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showError('signup-error', 'Passwords do not match');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showError('signup-error', 'Password must be at least 6 characters');
+                return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:8000/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.token);
+                    currentUser = data.user;
+                    showDashboard();
+                } else {
+                    const error = await response.json();
+                    showError('signup-error', error.detail || 'Signup failed');
+                }
+            } catch (error) {
+                showError('signup-error', 'Server error. Please try again.');
+            }
+        }
+
+        async function handleForgotPassword() {
+            const email = document.getElementById('forgot-email').value;
+            
+            if (!email) {
+                showError('forgot-error', 'Please enter your email');
+                return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:8000/auth/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    resetToken = data.reset_token;
+                    showSuccess('forgot-success', 'Reset code sent! Check console for demo OTP');
+                    setTimeout(() => {
+                        showResetPassword();
+                    }, 2000);
+                } else {
+                    showError('forgot-error', 'Email not found');
+                }
+            } catch (error) {
+                // Demo mode
+                resetToken = '123456';
+                showSuccess('forgot-success', 'Demo OTP: 123456');
+                setTimeout(() => {
+                    showResetPassword();
+                }, 2000);
+            }
+        }
+
+        async function handleResetPassword() {
+            const newPassword = document.getElementById('reset-password').value;
+            const confirmPassword = document.getElementById('reset-confirm-password').value;
+            const otp = prompt('Enter the OTP sent to your email:');
+            
+            if (!newPassword || !confirmPassword) {
+                showError('reset-error', 'Please enter new password');
+                return;
+            }
+            
+            if (newPassword !== confirmPassword) {
+                showError('reset-error', 'Passwords do not match');
+                return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:8000/auth/reset-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        otp: otp,
+                        new_password: newPassword 
+                    })
+                });
+                
+                if (response.ok) {
+                    showSuccess('reset-success', 'Password reset successfully! Please login.');
+                    setTimeout(() => {
+                        showLogin();
+                    }, 2000);
+                } else {
+                    showError('reset-error', 'Invalid OTP');
+                }
+            } catch (error) {
+                showError('reset-error', 'Reset failed. Please try again.');
+            }
+        }
+
+        function showDashboard() {
+            document.getElementById('auth-container').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'grid';
+            createFloatingHearts();
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            currentUser = null;
+            document.getElementById('auth-container').style.display = 'flex';
+            document.getElementById('dashboard').style.display = 'none';
+        }
+
+        function showError(elementId, message) {
+            const errorDiv = document.getElementById(elementId);
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function showSuccess(elementId, message) {
+            const successDiv = document.getElementById(elementId);
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        function toggleVoiceInput() {
+            if (!recognition) {
+                alert('Voice input is not supported in your browser');
+                return;
+            }
+            
+            if (isListening) {
+                stopVoiceInput();
+            } else {
+                startVoiceInput();
+            }
+        }
+
+        function startVoiceInput() {
+            if (recognition) {
+                recognition.start();
+                isListening = true;
+                const voiceBtn = document.getElementById('voice-btn');
+                voiceBtn.classList.add('listening');
+                voiceBtn.textContent = '🎤 Listening...';
+            }
+        }
+
+        function stopVoiceInput() {
+            if (recognition && isListening) {
+                recognition.stop();
+                isListening = false;
+                const voiceBtn = document.getElementById('voice-btn');
+                voiceBtn.classList.remove('listening');
+                voiceBtn.textContent = '🎤 Voice';
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (!message) {
+                alert('Please enter a message');
+                return;
+            }
+            
+            addMessage(message, true);
+            input.value = '';
+            
+            const typingDiv = addTypingIndicator();
+            
+            try {
+                const response = await fetch('http://localhost:8000/chat/stream', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': Bearer 
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        user_id: currentUser?.email || 'anonymous',
+                        conversation_id: conversationId
+                    })
+                });
+                
+                const text = await response.text();
+                removeTypingIndicator(typingDiv);
+                addMessage(text, false);
+                
+            } catch (error) {
+                removeTypingIndicator(typingDiv);
+                addMessage('❌ Error: Could not connect to server.', false);
+            }
+        }
+
+        function addMessage(text, isUser) {
+            const chatArea = document.getElementById('chat-area');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = message ;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = text;
+            
+            messageDiv.appendChild(contentDiv);
+            chatArea.appendChild(messageDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            
+            return messageDiv;
+        }
+
+        function addTypingIndicator() {
+            const chatArea = document.getElementById('chat-area');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message bot-message';
+            typingDiv.id = 'typing-indicator';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content typing-indicator';
+            contentDiv.innerHTML = '<span></span><span></span><span></span>';
+            
+            typingDiv.appendChild(contentDiv);
+            chatArea.appendChild(typingDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            
+            return typingDiv;
+        }
+
+        function removeTypingIndicator(indicator) {
+            if (indicator) indicator.remove();
+        }
+
+        function createFloatingHearts() {
+            setInterval(() => {
+                const heart = document.createElement('div');
+                heart.className = 'floating-heart';
+                heart.innerHTML = ['❤️', '💙', '💚', '💛', '💜'][Math.floor(Math.random() * 5)];
+                heart.style.left = Math.random() * 100 + '%';
+                heart.style.animationDuration = Math.random() * 10 + 5 + 's';
+                heart.style.fontSize = (Math.random() * 20 + 10) + 'px';
+                document.getElementById('animated-bg').appendChild(heart);
+                
+                setTimeout(() => heart.remove(), 15000);
+            }, 1000);
+        }
+
+        // Enter key to send
+        document.addEventListener('DOMContentLoaded', function() {
+            const input = document.getElementById('message-input');
+            if (input) {
+                input.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,316 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot AI - Your Medical Assistant</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header {
+            text-align: center;
+            color: white;
+            padding: 40px 0;
+        }
+        .header h1 { font-size: 3em; margin-bottom: 10px; }
+        .header p { font-size: 1.2em; opacity: 0.9; }
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+        .auth-panel, .chat-panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        .auth-panel h2, .chat-panel h2 { color: #667eea; margin-bottom: 20px; }
+        input, textarea {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        button:hover { opacity: 0.9; transform: translateY(-2px); }
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            background: #f9f9f9;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 80%;
+        }
+        .user-message {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .bot-message {
+            background: #e0e0e0;
+            color: #333;
+            margin-right: auto;
+        }
+        .ai-badge {
+            font-size: 10px;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 10px;
+            text-align: center;
+        }
+        .status.online { background: #d4edda; color: #155724; }
+        .status.offline { background: #f8d7da; color: #721c24; }
+        .user-info {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+            text-align: center;
+        }
+        @media (max-width: 768px) {
+            .main-content { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 HealthBot AI</h1>
+            <p>Your Intelligent Medical Assistant - Powered by Cohere AI</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="auth-panel" id="authPanel">
+                <h2 id="authTitle">Login</h2>
+                <div id="loginForm">
+                    <input type="text" id="loginUsername" placeholder="Username" />
+                    <input type="password" id="loginPassword" placeholder="Password" />
+                    <button onclick="login()">Login</button>
+                    <p style="margin-top: 10px;">Don't have an account? <a href="#" onclick="showRegister()">Register here</a></p>
+                </div>
+                <div id="registerForm" style="display:none;">
+                    <input type="text" id="regUsername" placeholder="Username" />
+                    <input type="email" id="regEmail" placeholder="Email" />
+                    <input type="password" id="regPassword" placeholder="Password" />
+                    <input type="text" id="regFullName" placeholder="Full Name (optional)" />
+                    <button onclick="register()">Register</button>
+                    <p style="margin-top: 10px;"><a href="#" onclick="showLogin()">Back to Login</a></p>
+                </div>
+                <div id="userInfo" style="display:none;" class="user-info">
+                    <p>✅ Logged in as: <strong id="userName"></strong></p>
+                    <button onclick="logout()">Logout</button>
+                </div>
+            </div>
+            
+            <div class="chat-panel" id="chatPanel" style="opacity:0.5; pointer-events:none;">
+                <h2>💬 Chat with HealthBot AI</h2>
+                <div id="chatMessages" class="chat-messages">
+                    <div class="message bot-message">
+                        Welcome! Please login to start chatting with me. 🤖
+                    </div>
+                </div>
+                <textarea id="messageInput" rows="3" placeholder="Ask me anything about health..."></textarea>
+                <button onclick="sendMessage()">Send Message</button>
+                <div id="aiStatus" class="status online">🤖 AI Status: Ready</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let authToken = null;
+        let userId = null;
+        
+        // API Base URL
+        const API_URL = 'http://localhost:8000';
+        
+        async function register() {
+            const username = document.getElementById('regUsername').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const full_name = document.getElementById('regFullName').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password, full_name })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    authToken = data.access_token;
+                    userId = data.user_id;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('userId', userId);
+                    localStorage.setItem('username', username);
+                    showChat();
+                    addMessage('bot', 'Welcome! You are now registered and logged in. How can I help you today?');
+                } else {
+                    alert('Registration failed: ' + data.detail);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function login() {
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    authToken = data.access_token;
+                    userId = data.user_id;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('userId', userId);
+                    localStorage.setItem('username', username);
+                    showChat();
+                    addMessage('bot', 'Welcome back! How can I assist you with your health today?');
+                } else {
+                    alert('Login failed: ' + data.detail);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        function logout() {
+            authToken = null;
+            userId = null;
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userId');
+            localStorage.removeItem('username');
+            showAuth();
+            addMessage('bot', 'You have been logged out. Please login to continue.');
+        }
+        
+        async function sendMessage() {
+            if (!authToken) {
+                alert('Please login first');
+                return;
+            }
+            
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            addMessage('user', message);
+            input.value = '';
+            
+            try {
+                const response = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ message })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    const aiStatus = data.ai_used ? '🤖 AI Generated' : '📚 Medical Database';
+                    addMessage('bot', data.response, aiStatus);
+                    document.getElementById('aiStatus').innerHTML = `🤖 AI Status: Active (${data.model_used})`;
+                } else {
+                    addMessage('bot', 'Error: ' + data.detail);
+                }
+            } catch (error) {
+                addMessage('bot', 'Error: ' + error.message);
+            }
+        }
+        
+        function addMessage(role, text, badge = null) {
+            const messagesDiv = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}-message`;
+            messageDiv.innerHTML = `<div>${text}</div>`;
+            if (badge) {
+                messageDiv.innerHTML += `<div class="ai-badge">${badge}</div>`;
+            }
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function showChat() {
+            document.getElementById('authPanel').style.display = 'none';
+            document.getElementById('chatPanel').style.opacity = '1';
+            document.getElementById('chatPanel').style.pointerEvents = 'auto';
+            document.getElementById('userInfo').style.display = 'block';
+            document.getElementById('userName').innerText = localStorage.getItem('username');
+        }
+        
+        function showAuth() {
+            document.getElementById('authPanel').style.display = 'block';
+            document.getElementById('chatPanel').style.opacity = '0.5';
+            document.getElementById('chatPanel').style.pointerEvents = 'none';
+            document.getElementById('userInfo').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('registerForm').style.display = 'none';
+        }
+        
+        function showRegister() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('registerForm').style.display = 'block';
+        }
+        
+        function showLogin() {
+            document.getElementById('registerForm').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+        }
+        
+        // Check for saved session
+        const savedToken = localStorage.getItem('authToken');
+        if (savedToken) {
+            authToken = savedToken;
+            userId = localStorage.getItem('userId');
+            showChat();
+            addMessage('bot', 'Welcome back! I\'m ready to help with your health questions.');
+        }
+        
+        // Send message on Enter key
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,608 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot AI - Medical Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 450px;
+            padding: 20px;
+        }
+
+        .box {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h2 {
+            color: #667eea;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .link {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
+
+        .link a {
+            color: #667eea;
+            text-decoration: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .forgot-link {
+            text-align: right;
+            margin-top: 10px;
+        }
+
+        .forgot-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .error-msg {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .success-msg {
+            background: #e6fffa;
+            color: #38a169;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        /* Dashboard Styles */
+        .dashboard {
+            display: none;
+            width: 100%;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        .chat-container {
+            background: white;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            padding: 8px 20px;
+            border: none;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f7f9fc;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+        }
+
+        .user-message {
+            justify-content: flex-end;
+        }
+
+        .bot-message {
+            justify-content: flex-start;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 20px;
+            line-height: 1.5;
+        }
+
+        .user-message .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .bot-message .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+        }
+
+        #sendBtn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="loginPage" class="container">
+        <div class="box">
+            <div class="header">
+                <h2>🏥 HealthBot AI</h2>
+                <p>Secure Medical Assistant</p>
+            </div>
+            
+            <div id="loginError" class="error-msg"></div>
+            
+            <div class="input-group">
+                <label>Email</label>
+                <input type="email" id="loginEmail" placeholder="Enter your email">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="loginPassword" placeholder="Enter your password">
+            </div>
+            <div class="forgot-link">
+                <a id="forgotBtn">Forgot Password?</a>
+            </div>
+            <button class="btn" id="loginBtn">Login</button>
+            <div class="link">
+                Don't have an account? <a id="showSignupBtn">Sign up</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signup Page -->
+    <div id="signupPage" class="container" style="display: none;">
+        <div class="box">
+            <div class="header">
+                <h2>🏥 Create Account</h2>
+                <p>Join HealthBot AI</p>
+            </div>
+            
+            <div id="signupError" class="error-msg"></div>
+            
+            <div class="input-group">
+                <label>Full Name</label>
+                <input type="text" id="signupName" placeholder="Enter your name">
+            </div>
+            <div class="input-group">
+                <label>Email</label>
+                <input type="email" id="signupEmail" placeholder="Enter your email">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="signupPassword" placeholder="Create a password">
+            </div>
+            <div class="input-group">
+                <label>Confirm Password</label>
+                <input type="password" id="signupConfirmPassword" placeholder="Re-enter your password">
+            </div>
+            <button class="btn" id="signupBtn">Sign Up</button>
+            <div class="link">
+                Already have an account? <a id="showLoginBtn">Login</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Page -->
+    <div id="forgotPage" class="container" style="display: none;">
+        <div class="box">
+            <div class="header">
+                <h2>🔐 Reset Password</h2>
+                <p>Enter your email to reset password</p>
+            </div>
+            
+            <div id="forgotError" class="error-msg"></div>
+            <div id="forgotSuccess" class="success-msg"></div>
+            
+            <div class="input-group">
+                <label>Email</label>
+                <input type="email" id="forgotEmail" placeholder="Enter your email">
+            </div>
+            <button class="btn" id="resetBtn">Send Reset Link</button>
+            <div class="link">
+                <a id="backToLoginBtn">Back to Login</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard">
+        <div class="chat-container">
+            <div class="chat-header">
+                <div>
+                    <span>🏥 HealthBot AI</span>
+                    <span id="displayName" style="margin-left: 10px;"></span>
+                </div>
+                <button class="logout-btn" id="logoutBtn">Logout</button>
+            </div>
+            <div class="chat-area" id="chatArea">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        👋 Welcome! I'm your medical assistant. How can I help you today?
+                    </div>
+                </div>
+            </div>
+            <div class="input-area">
+                <input type="text" id="messageInput" placeholder="Type your health question here...">
+                <button id="sendBtn">Send 📤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const loginPage = document.getElementById('loginPage');
+        const signupPage = document.getElementById('signupPage');
+        const forgotPage = document.getElementById('forgotPage');
+        const dashboard = document.getElementById('dashboard');
+        
+        // Buttons
+        const loginBtn = document.getElementById('loginBtn');
+        const signupBtn = document.getElementById('signupBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        
+        // Links
+        const showSignupBtn = document.getElementById('showSignupBtn');
+        const showLoginBtn = document.getElementById('showLoginBtn');
+        const forgotBtn = document.getElementById('forgotBtn');
+        const backToLoginBtn = document.getElementById('backToLoginBtn');
+        
+        // Inputs
+        const loginEmail = document.getElementById('loginEmail');
+        const loginPassword = document.getElementById('loginPassword');
+        const signupName = document.getElementById('signupName');
+        const signupEmail = document.getElementById('signupEmail');
+        const signupPassword = document.getElementById('signupPassword');
+        const signupConfirmPassword = document.getElementById('signupConfirmPassword');
+        const forgotEmail = document.getElementById('forgotEmail');
+        const messageInput = document.getElementById('messageInput');
+        const displayName = document.getElementById('displayName');
+        
+        // Error divs
+        const loginError = document.getElementById('loginError');
+        const signupError = document.getElementById('signupError');
+        const forgotError = document.getElementById('forgotError');
+        const forgotSuccess = document.getElementById('forgotSuccess');
+        
+        let currentUser = null;
+        let conversationId = 'conv_' + Date.now();
+        
+        // Check for saved session
+        const savedUser = localStorage.getItem('healthbot_user');
+        if (savedUser) {
+            currentUser = JSON.parse(savedUser);
+            showDashboard();
+        }
+        
+        // Event Listeners
+        loginBtn.addEventListener('click', handleLogin);
+        signupBtn.addEventListener('click', handleSignup);
+        resetBtn.addEventListener('click', handleForgotPassword);
+        logoutBtn.addEventListener('click', logout);
+        sendBtn.addEventListener('click', sendMessage);
+        showSignupBtn.addEventListener('click', showSignup);
+        showLoginBtn.addEventListener('click', showLogin);
+        forgotBtn.addEventListener('click', showForgot);
+        backToLoginBtn.addEventListener('click', showLogin);
+        
+        // Enter key for message input
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // Enter key for login
+        loginPassword.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                handleLogin();
+            }
+        });
+        
+        // Password confirmation check
+        signupConfirmPassword.addEventListener('keyup', function() {
+            const password = signupPassword.value;
+            const confirm = signupConfirmPassword.value;
+            if (password !== confirm && confirm.length > 0) {
+                signupConfirmPassword.style.borderColor = '#e53e3e';
+            } else {
+                signupConfirmPassword.style.borderColor = '#38a169';
+            }
+        });
+        
+        function showLogin() {
+            loginPage.style.display = 'flex';
+            signupPage.style.display = 'none';
+            forgotPage.style.display = 'none';
+            clearErrors();
+        }
+        
+        function showSignup() {
+            loginPage.style.display = 'none';
+            signupPage.style.display = 'flex';
+            forgotPage.style.display = 'none';
+            clearErrors();
+        }
+        
+        function showForgot() {
+            loginPage.style.display = 'none';
+            signupPage.style.display = 'none';
+            forgotPage.style.display = 'flex';
+            clearErrors();
+        }
+        
+        function showDashboard() {
+            loginPage.style.display = 'none';
+            signupPage.style.display = 'none';
+            forgotPage.style.display = 'none';
+            dashboard.style.display = 'block';
+            if (currentUser) {
+                displayName.textContent = 👤 ;
+            }
+            clearErrors();
+        }
+        
+        function clearErrors() {
+            const errors = [loginError, signupError, forgotError];
+            errors.forEach(error => {
+                if (error) error.style.display = 'none';
+            });
+            if (forgotSuccess) forgotSuccess.style.display = 'none';
+        }
+        
+        function showError(errorDiv, message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 3000);
+        }
+        
+        function showSuccess(successDiv, message) {
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+        
+        function handleLogin() {
+            const email = loginEmail.value.trim();
+            const password = loginPassword.value.trim();
+            
+            if (!email || !password) {
+                showError(loginError, 'Please enter email and password');
+                return;
+            }
+            
+            // Demo login - works without backend
+            currentUser = {
+                email: email,
+                name: email.split('@')[0],
+                loggedIn: true
+            };
+            
+            localStorage.setItem('healthbot_user', JSON.stringify(currentUser));
+            showDashboard();
+        }
+        
+        function handleSignup() {
+            const name = signupName.value.trim();
+            const email = signupEmail.value.trim();
+            const password = signupPassword.value;
+            const confirm = signupConfirmPassword.value;
+            
+            if (!name || !email || !password) {
+                showError(signupError, 'Please fill all fields');
+                return;
+            }
+            
+            if (password !== confirm) {
+                showError(signupError, 'Passwords do not match');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showError(signupError, 'Password must be at least 6 characters');
+                return;
+            }
+            
+            // Demo signup - works without backend
+            currentUser = {
+                email: email,
+                name: name,
+                loggedIn: true
+            };
+            
+            localStorage.setItem('healthbot_user', JSON.stringify(currentUser));
+            showDashboard();
+        }
+        
+        function handleForgotPassword() {
+            const email = forgotEmail.value.trim();
+            
+            if (!email) {
+                showError(forgotError, 'Please enter your email');
+                return;
+            }
+            
+            // Demo reset
+            showSuccess(forgotSuccess, Password reset link sent to . Check your email.);
+            setTimeout(() => {
+                showLogin();
+            }, 3000);
+        }
+        
+        function logout() {
+            localStorage.removeItem('healthbot_user');
+            currentUser = null;
+            showLogin();
+            // Clear input fields
+            loginEmail.value = '';
+            loginPassword.value = '';
+        }
+        
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            
+            if (!message) {
+                alert('Please enter a message');
+                return;
+            }
+            
+            const chatArea = document.getElementById('chatArea');
+            
+            // Add user message
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'message user-message';
+            userMsgDiv.innerHTML = <div class="message-content"></div>;
+            chatArea.appendChild(userMsgDiv);
+            
+            // Clear input
+            messageInput.value = '';
+            
+            // Scroll to bottom
+            chatArea.scrollTop = chatArea.scrollHeight;
+            
+            // Add bot response
+            setTimeout(() => {
+                const botMsgDiv = document.createElement('div');
+                botMsgDiv.className = 'message bot-message';
+                
+                // Simple medical responses
+                let response = getMedicalResponse(message);
+                
+                botMsgDiv.innerHTML = <div class="message-content"></div>;
+                chatArea.appendChild(botMsgDiv);
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }, 500);
+        }
+        
+        function getMedicalResponse(question) {
+            const q = question.toLowerCase();
+            if (q.includes('cold') || q.includes('flu')) {
+                return "🩺 Common cold symptoms include: runny nose, cough, sore throat, and fatigue. Rest, fluids, and over-the-counter medication can help. See a doctor if symptoms persist beyond 10 days.";
+            } else if (q.includes('fever')) {
+                return "🌡️ For fever: Rest, drink plenty of fluids, and take acetaminophen or ibuprofen. Seek medical attention if fever exceeds 103°F (39.4°C) or lasts more than 3 days.";
+            } else if (q.includes('headache')) {
+                return "🤕 For headaches: Rest in a quiet, dark room, stay hydrated, and try over-the-counter pain relievers. Consult a doctor if headaches are severe or persistent.";
+            } else {
+                return "💙 Thank you for your question. I'm a medical AI assistant. For the best response, please ask about specific symptoms like cold, fever, or headache. Always consult a doctor for serious medical concerns.";
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

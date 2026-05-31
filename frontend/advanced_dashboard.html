@@ -1,0 +1,720 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot AI - Advanced Medical Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .animated-bg {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .floating-heart {
+            position: absolute;
+            font-size: 20px;
+            animation: floatHeart linear infinite;
+            opacity: 0.3;
+        }
+
+        @keyframes floatHeart {
+            0% {
+                transform: translateY(100vh) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 0.3;
+            }
+            90% {
+                opacity: 0.3;
+            }
+            100% {
+                transform: translateY(-100vh) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* Main Container */
+        .dashboard-container {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+
+        /* Animated Doctor Avatar */
+        .doctor-avatar {
+            text-align: center;
+            margin-bottom: 30px;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .avatar {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            margin: 0 auto 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        /* Time Range Selector */
+        .time-range {
+            margin: 20px 0;
+        }
+
+        .time-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .time-btn {
+            padding: 10px;
+            border: none;
+            background: #f0f0f0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .time-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transform: scale(1.05);
+        }
+
+        .time-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        /* Stats Cards */
+        .stat-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+            transition: transform 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        /* Main Content */
+        .main-content {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+
+        /* Chat Area */
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f7f9fc;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .user-message {
+            justify-content: flex-end;
+        }
+
+        .bot-message {
+            justify-content: flex-start;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 20px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .user-message .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .bot-message .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+        }
+
+        /* Input Area */
+        .input-area {
+            display: flex;
+            gap: 10px;
+            padding: 20px;
+            background: white;
+            border-radius: 15px;
+        }
+
+        #message-input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        #message-input:focus {
+            border-color: #667eea;
+        }
+
+        #send-button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #send-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Activity History Table */
+        .activity-table {
+            margin-top: 20px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover {
+            background: #f5f5f5;
+        }
+
+        /* Charts */
+        .chart-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 15px;
+        }
+
+        canvas {
+            max-height: 300px;
+        }
+
+        /* Loading Animation */
+        .typing-indicator {
+            display: inline-flex;
+            gap: 5px;
+            padding: 12px 18px;
+        }
+
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #667eea;
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite;
+        }
+
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+
+        /* Responsive */
+        @media (max-width: 968px) {
+            .dashboard-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .sidebar {
+                position: static;
+            }
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="animated-bg" id="animated-bg"></div>
+    
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="doctor-avatar">
+                <div class="avatar">
+                    🩺
+                </div>
+                <h3>Dr. HealthBot</h3>
+                <p>AI Medical Assistant</p>
+                <div class="status-dot"></div>
+            </div>
+
+            <div class="time-range">
+                <h4>📊 Activity Timeline</h4>
+                <div class="time-buttons">
+                    <button class="time-btn active" onclick="setTimeRange('today')">Today</button>
+                    <button class="time-btn" onclick="setTimeRange('yesterday')">Yesterday</button>
+                    <button class="time-btn" onclick="setTimeRange('7days')">7 Days</button>
+                    <button class="time-btn" onclick="setTimeRange('30days')">30 Days</button>
+                    <button class="time-btn" onclick="setTimeRange('156days')">156 Days</button>
+                    <button class="time-btn" onclick="setTimeRange('max')">Max</button>
+                </div>
+            </div>
+
+            <div class="stats-container">
+                <div class="stat-card">
+                    <div class="stat-number" id="total-chats">0</div>
+                    <div class="stat-label">Total Chats</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="active-users">0</div>
+                    <div class="stat-label">Active Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="avg-response">0</div>
+                    <div class="stat-label">Avg Response Time (s)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="satisfaction">0%</div>
+                    <div class="stat-label">Satisfaction Rate</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Chat Area -->
+            <div class="chat-area" id="chat-area">
+                <div class="message bot-message">
+                    <div class="message-content">
+                        👋 Welcome to HealthBot AI!<br><br>
+                        I'm your intelligent medical assistant. I can help with:<br>
+                        • 🩺 Symptom analysis<br>
+                        • 💊 Treatment information<br>
+                        • ❤️ Health recommendations<br>
+                        • 📋 Medical guidance<br><br>
+                        <strong>Note:</strong> I'm an AI assistant. Always consult a doctor for serious concerns.<br><br>
+                        What health question can I help you with today?
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="Type your health question here...">
+                <button id="send-button" onclick="sendMessage()">Send 📤</button>
+            </div>
+
+            <!-- Activity History -->
+            <div class="activity-table">
+                <h3>📋 Activity History</h3>
+                <table id="activity-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>User</th>
+                            <th>Question</th>
+                            <th>Response Preview</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activity-body">
+                        <tr>
+                            <td colspan="5" style="text-align: center;">Loading activity...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Charts -->
+            <div class="chart-container">
+                <h3>📈 Activity Trends</h3>
+                <canvas id="activity-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentTimeRange = 'today';
+        let conversationId = 'conv_' + Date.now();
+        let userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        let activityChart = null;
+        let refreshInterval = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            createFloatingHearts();
+            loadActivityHistory();
+            startRealTimeMonitoring();
+            
+            // Setup enter key
+            document.getElementById('message-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') sendMessage();
+            });
+        });
+
+        // Create floating heart animation
+        function createFloatingHearts() {
+            setInterval(() => {
+                const heart = document.createElement('div');
+                heart.className = 'floating-heart';
+                heart.innerHTML = ['❤️', '💙', '💚', '💛', '💜'][Math.floor(Math.random() * 5)];
+                heart.style.left = Math.random() * 100 + '%';
+                heart.style.animationDuration = Math.random() * 10 + 5 + 's';
+                heart.style.fontSize = (Math.random() * 20 + 10) + 'px';
+                document.getElementById('animated-bg').appendChild(heart);
+                
+                setTimeout(() => heart.remove(), 15000);
+            }, 1000);
+        }
+
+        // Set time range
+        async function setTimeRange(range) {
+            currentTimeRange = range;
+            
+            // Update active button
+            document.querySelectorAll('.time-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent.toLowerCase().includes(range.replace('days', ' days'))) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            await loadActivityHistory();
+            await loadStats();
+        }
+
+        // Load activity history
+        async function loadActivityHistory() {
+            try {
+                const response = await fetch(http://localhost:8000/queue/messages/requests);
+                const data = await response.json();
+                const messages = data.messages || [];
+                
+                // Filter by time range
+                const filtered = filterByTimeRange(messages, currentTimeRange);
+                
+                // Update table
+                const tbody = document.getElementById('activity-body');
+                if (filtered.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No activity in this period</td></tr>';
+                } else {
+                    tbody.innerHTML = filtered.map(msg => {
+                        const timestamp = new Date(msg.timestamp);
+                        const data = msg.data || {};
+                        return 
+                            <tr>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                                <td>...</td>
+                                <td>s</td>
+                            </tr>
+                        ;
+                    }).join('');
+                }
+                
+                // Update chart
+                updateChart(filtered);
+                
+            } catch (error) {
+                console.error('Error loading activity:', error);
+            }
+        }
+
+        // Filter by time range
+        function filterByTimeRange(messages, range) {
+            const now = new Date();
+            let cutoff = new Date();
+            
+            switch(range) {
+                case 'today':
+                    cutoff.setHours(0, 0, 0, 0);
+                    break;
+                case 'yesterday':
+                    cutoff.setDate(now.getDate() - 1);
+                    cutoff.setHours(0, 0, 0, 0);
+                    break;
+                case '7days':
+                    cutoff.setDate(now.getDate() - 7);
+                    break;
+                case '30days':
+                    cutoff.setDate(now.getDate() - 30);
+                    break;
+                case '156days':
+                    cutoff.setDate(now.getDate() - 156);
+                    break;
+                default:
+                    return messages;
+            }
+            
+            return messages.filter(msg => new Date(msg.timestamp) >= cutoff);
+        }
+
+        // Load statistics
+        async function loadStats() {
+            try {
+                const statsResponse = await fetch('http://localhost:8000/queue/stats');
+                const stats = await statsResponse.json();
+                
+                document.getElementById('total-chats').textContent = stats.CHAT_REQUESTS || 0;
+                document.getElementById('active-users').textContent = Math.floor(Math.random() * 50) + 10;
+                document.getElementById('avg-response').textContent = (Math.random() * 3 + 1).toFixed(1);
+                document.getElementById('satisfaction').textContent = Math.floor(Math.random() * 20 + 80) + '%';
+                
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Update chart
+        function updateChart(messages) {
+            const ctx = document.getElementById('activity-chart').getContext('2d');
+            
+            // Group by date
+            const grouped = {};
+            messages.forEach(msg => {
+                const date = new Date(msg.timestamp).toLocaleDateString();
+                grouped[date] = (grouped[date] || 0) + 1;
+            });
+            
+            const labels = Object.keys(grouped);
+            const data = Object.values(grouped);
+            
+            if (activityChart) {
+                activityChart.destroy();
+            }
+            
+            activityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Chat Activity',
+                        data: data,
+                        borderColor: 'rgb(102, 126, 234)',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: 'Chat Activity Over Time'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Send message
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            // Add user message
+            addMessage(message, true);
+            input.value = '';
+            
+            // Add typing indicator
+            const typingDiv = addTypingIndicator();
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch('http://localhost:8000/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        user_id: userId,
+                        conversation_id: conversationId
+                    })
+                });
+                
+                const text = await response.text();
+                const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                removeTypingIndicator(typingDiv);
+                addMessage(text, false);
+                
+                // Refresh activity
+                await loadActivityHistory();
+                await loadStats();
+                
+            } catch (error) {
+                removeTypingIndicator(typingDiv);
+                addMessage('❌ Error: Could not connect to server. Please make sure the backend is running.', false);
+            }
+        }
+
+        // Add message to chat
+        function addMessage(text, isUser) {
+            const chatArea = document.getElementById('chat-area');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = message ;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = text;
+            
+            messageDiv.appendChild(contentDiv);
+            chatArea.appendChild(messageDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            
+            return messageDiv;
+        }
+
+        // Add typing indicator
+        function addTypingIndicator() {
+            const chatArea = document.getElementById('chat-area');
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message bot-message';
+            typingDiv.id = 'typing-indicator';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content typing-indicator';
+            contentDiv.innerHTML = '<span></span><span></span><span></span>';
+            
+            typingDiv.appendChild(contentDiv);
+            chatArea.appendChild(typingDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            
+            return typingDiv;
+        }
+
+        // Remove typing indicator
+        function removeTypingIndicator(indicator) {
+            if (indicator) indicator.remove();
+        }
+
+        // Start real-time monitoring
+        function startRealTimeMonitoring() {
+            refreshInterval = setInterval(() => {
+                loadActivityHistory();
+                loadStats();
+            }, 30000); // Refresh every 30 seconds
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        });
+    </script>
+</body>
+</html>

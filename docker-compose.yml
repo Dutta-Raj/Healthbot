@@ -1,0 +1,63 @@
+﻿version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: medical-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: medical-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: medical-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: medical-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
+  medical-chatbot:
+    build: .
+    container_name: medical-chatbot
+    depends_on:
+      - mongodb
+      - kafka
+      - chromadb
+    environment:
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ENABLED: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+
+volumes:
+  mongodb_data:
+  chroma_data:

@@ -1,0 +1,410 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthBot AI - Working Version</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h2 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 30px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #5a67d8;
+        }
+        .link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .link a {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .chat-area {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background: #f7f9fc;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 10px;
+        }
+        .user {
+            background: #667eea;
+            color: white;
+            text-align: right;
+        }
+        .bot {
+            background: #e0e0e0;
+            color: #333;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .input-group input {
+            flex: 1;
+            margin: 0;
+        }
+        .input-group button {
+            width: auto;
+            padding: 12px 24px;
+            margin: 0;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .logout-btn {
+            width: auto;
+            background: #e53e3e;
+            padding: 8px 20px;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Login Page -->
+<div id="loginPage" class="container">
+    <h2>🏥 HealthBot AI</h2>
+    <div id="loginError" class="error"></div>
+    <input type="email" id="loginEmail" placeholder="Email" autocomplete="off">
+    <input type="password" id="loginPassword" placeholder="Password">
+    <button onclick="handleLogin()">Login</button>
+    <div class="link">
+        <a onclick="showSignup()">Create Account</a> | <a onclick="showForgot()">Forgot Password?</a>
+    </div>
+</div>
+
+<!-- Signup Page -->
+<div id="signupPage" class="container" style="display: none;">
+    <h2>Create Account</h2>
+    <div id="signupError" class="error"></div>
+    <input type="text" id="signupName" placeholder="Full Name">
+    <input type="email" id="signupEmail" placeholder="Email">
+    <input type="password" id="signupPassword" placeholder="Password">
+    <input type="password" id="signupConfirm" placeholder="Confirm Password">
+    <button onclick="handleSignup()">Sign Up</button>
+    <div class="link">
+        <a onclick="showLogin()">Already have an account? Login</a>
+    </div>
+</div>
+
+<!-- Forgot Password Page -->
+<div id="forgotPage" class="container" style="display: none;">
+    <h2>Reset Password</h2>
+    <div id="forgotError" class="error"></div>
+    <div id="forgotSuccess" class="error" style="background:#e6fffa;color:#38a169;"></div>
+    <input type="email" id="forgotEmail" placeholder="Email">
+    <button onclick="handleForgot()">Send Reset Link</button>
+    <div class="link">
+        <a onclick="showLogin()">Back to Login</a>
+    </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboardPage" style="display: none; width: 100%; max-width: 800px; margin: 0 auto;">
+    <div class="container" style="max-width: 100%;">
+        <div class="header">
+            <h2 style="margin:0;">🏥 HealthBot AI</h2>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+        <div id="chatArea" class="chat-area">
+            <div class="message bot">Hello! I'm your medical assistant. How can I help you?</div>
+        </div>
+        <div class="input-group">
+            <input type="text" id="chatInput" placeholder="Type your question...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Simple in-memory storage
+    let users = JSON.parse(localStorage.getItem('users') || '[]');
+    let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    
+    // Check if already logged in
+    if (currentUser) {
+        showDashboard();
+    }
+    
+    function showLogin() {
+        document.getElementById('loginPage').style.display = 'block';
+        document.getElementById('signupPage').style.display = 'none';
+        document.getElementById('forgotPage').style.display = 'none';
+        document.getElementById('dashboardPage').style.display = 'none';
+        clearErrors();
+    }
+    
+    function showSignup() {
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('signupPage').style.display = 'block';
+        document.getElementById('forgotPage').style.display = 'none';
+        document.getElementById('dashboardPage').style.display = 'none';
+        clearErrors();
+    }
+    
+    function showForgot() {
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('signupPage').style.display = 'none';
+        document.getElementById('forgotPage').style.display = 'block';
+        document.getElementById('dashboardPage').style.display = 'none';
+        clearErrors();
+    }
+    
+    function showDashboard() {
+        document.getElementById('loginPage').style.display = 'none';
+        document.getElementById('signupPage').style.display = 'none';
+        document.getElementById('forgotPage').style.display = 'none';
+        document.getElementById('dashboardPage').style.display = 'block';
+        clearErrors();
+        
+        // Display welcome message with user name
+        if (currentUser) {
+            const chatArea = document.getElementById('chatArea');
+            const welcomeMsg = document.createElement('div');
+            welcomeMsg.className = 'message bot';
+            welcomeMsg.innerHTML = Welcome back, ! 👋 How can I help you today?;
+            chatArea.appendChild(welcomeMsg);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+    }
+    
+    function clearErrors() {
+        const errors = ['loginError', 'signupError', 'forgotError', 'forgotSuccess'];
+        errors.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+    }
+    
+    function showError(elementId, message) {
+        const el = document.getElementById(elementId);
+        el.textContent = message;
+        el.style.display = 'block';
+        setTimeout(() => {
+            el.style.display = 'none';
+        }, 3000);
+    }
+    
+    function handleLogin() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value.trim();
+        
+        if (!email || !password) {
+            showError('loginError', 'Please enter email and password');
+            return;
+        }
+        
+        // Check if user exists
+        const user = users.find(u => u.email === email && u.password === password);
+        
+        if (user) {
+            currentUser = user;
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            showDashboard();
+            // Clear inputs
+            document.getElementById('loginEmail').value = '';
+            document.getElementById('loginPassword').value = '';
+        } else {
+            showError('loginError', 'Invalid email or password');
+        }
+    }
+    
+    function handleSignup() {
+        const name = document.getElementById('signupName').value.trim();
+        const email = document.getElementById('signupEmail').value.trim();
+        const password = document.getElementById('signupPassword').value;
+        const confirm = document.getElementById('signupConfirm').value;
+        
+        if (!name || !email || !password) {
+            showError('signupError', 'Please fill all fields');
+            return;
+        }
+        
+        if (password !== confirm) {
+            showError('signupError', 'Passwords do not match');
+            return;
+        }
+        
+        if (password.length < 4) {
+            showError('signupError', 'Password must be at least 4 characters');
+            return;
+        }
+        
+        // Check if user already exists
+        if (users.find(u => u.email === email)) {
+            showError('signupError', 'Email already registered');
+            return;
+        }
+        
+        // Create new user
+        const newUser = { name, email, password };
+        users.push(newUser);
+        localStorage.setItem('users', JSON.stringify(users));
+        
+        // Auto login
+        currentUser = newUser;
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
+        
+        showDashboard();
+        
+        // Clear signup form
+        document.getElementById('signupName').value = '';
+        document.getElementById('signupEmail').value = '';
+        document.getElementById('signupPassword').value = '';
+        document.getElementById('signupConfirm').value = '';
+    }
+    
+    function handleForgot() {
+        const email = document.getElementById('forgotEmail').value.trim();
+        
+        if (!email) {
+            showError('forgotError', 'Please enter your email');
+            return;
+        }
+        
+        const user = users.find(u => u.email === email);
+        
+        if (user) {
+            showError('forgotSuccess', Password reset link sent to . Use any password to login (demo mode).);
+            setTimeout(() => {
+                showLogin();
+            }, 3000);
+        } else {
+            showError('forgotError', 'Email not found');
+        }
+    }
+    
+    function logout() {
+        localStorage.removeItem('currentUser');
+        currentUser = null;
+        showLogin();
+        
+        // Clear chat area
+        const chatArea = document.getElementById('chatArea');
+        chatArea.innerHTML = '<div class="message bot">Hello! I\'m your medical assistant. How can I help you?</div>';
+    }
+    
+    function sendMessage() {
+        const input = document.getElementById('chatInput');
+        const message = input.value.trim();
+        
+        if (!message) return;
+        
+        const chatArea = document.getElementById('chatArea');
+        
+        // Add user message
+        const userMsg = document.createElement('div');
+        userMsg.className = 'message user';
+        userMsg.textContent = message;
+        chatArea.appendChild(userMsg);
+        
+        // Clear input
+        input.value = '';
+        
+        // Scroll to bottom
+        chatArea.scrollTop = chatArea.scrollHeight;
+        
+        // Generate bot response
+        setTimeout(() => {
+            const botMsg = document.createElement('div');
+            botMsg.className = 'message bot';
+            botMsg.textContent = getResponse(message);
+            chatArea.appendChild(botMsg);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }, 500);
+    }
+    
+    function getResponse(question) {
+        const q = question.toLowerCase();
+        if (q.includes('cold') || q.includes('flu')) {
+            return "🤧 Cold symptoms include runny nose, cough, sore throat, and fatigue. Rest, drink fluids, and take over-the-counter medication. See a doctor if symptoms last more than 10 days.";
+        } else if (q.includes('fever')) {
+            return "🌡️ For fever: Rest, stay hydrated, and take acetaminophen or ibuprofen. Seek medical help if fever exceeds 103°F (39.4°C) or lasts more than 3 days.";
+        } else if (q.includes('headache')) {
+            return "🤕 For headaches: Rest in a dark, quiet room, drink water, and try over-the-counter pain relievers. Consult a doctor for severe or persistent headaches.";
+        } else if (q.includes('cough')) {
+            return "😷 For cough: Stay hydrated, use honey (for adults), and consider over-the-counter cough suppressants. See a doctor if cough lasts more than 3 weeks.";
+        } else if (q.includes('stomach') || q.includes('nausea')) {
+            return "🤢 For stomach issues: Eat bland foods (rice, bananas, toast), stay hydrated, and rest. Seek medical help if symptoms are severe or bloody.";
+        } else {
+            return "💙 I'm a medical AI assistant. Please ask about specific symptoms like: cold, fever, headache, cough, or stomach issues. Always consult a doctor for serious medical concerns.";
+        }
+    }
+    
+    // Enter key support
+    document.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter' && document.getElementById('dashboardPage').style.display === 'block') {
+            const input = document.getElementById('chatInput');
+            if (document.activeElement === input) {
+                sendMessage();
+            }
+        }
+    });
+</script>
+</body>
+</html>
