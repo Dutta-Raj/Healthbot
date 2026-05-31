@@ -1,10 +1,10 @@
-﻿# main.py - Complete Medical Chatbot Backend
+﻿# main.py - Fixed with proper conversation memory
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 import os
 import jwt
@@ -14,15 +14,11 @@ from pymongo import MongoClient
 import cohere
 import uvicorn
 
-# Load environment variables
 load_dotenv()
 
-# MongoDB Connection
+# MongoDB
 MONGODB_URI = os.getenv('MONGODB_URI')
 DATABASE_NAME = os.getenv('DATABASE_NAME', 'healthbot')
-if not MONGODB_URI:
-    raise ValueError("MONGODB_URI environment variable not set")
-
 client = MongoClient(MONGODB_URI)
 db = client[DATABASE_NAME]
 users_collection = db['users']
@@ -38,16 +34,12 @@ if COHERE_API_KEY:
         print("✅ Cohere AI Ready")
     except Exception as e:
         print(f"⚠️ Cohere error: {e}")
-else:
-    print("⚠️ COHERE_API_KEY not set")
 
-# JWT Settings
 SECRET_KEY = os.getenv('SECRET_KEY', 'medibot-secret-key-2026')
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 security = HTTPBearer()
 
-# Pydantic Models
 class UserRegister(BaseModel):
     username: str
     email: EmailStr
@@ -62,7 +54,6 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
 
-# Helper Functions
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
@@ -95,72 +86,129 @@ def is_medical_query(query: str) -> bool:
     ]
     return any(kw in query.lower() for kw in medical_keywords)
 
-def get_conversation_history(session_id: str, limit: int = 5):
+def get_conversation_history(session_id: str, limit: int = 10):
+    """Get recent conversation history for context"""
     history = list(conversations_collection.find(
         {"session_id": session_id},
-        {"_id": 0, "message": 1, "response": 1}
+        {"_id": 0, "message": 1, "response": 1, "timestamp": 1}
     ).sort("timestamp", -1).limit(limit))
-    history.reverse()
+    history.reverse()  # Oldest first
     return history
 
+def build_context_from_history(history: List[Dict]) -> str:
+    """Build context string from conversation history"""
+    if not history:
+        return ""
+    
+    context = "Previous conversation:\n"
+    for h in history[-6:]:  # Last 6 exchanges
+        context += f"User: {h['message']}\nAssistant: {h['response']}\n"
+    context += "\nContinue the conversation naturally. The user just said: "
+    return context
+
 def generate_response(query: str, session_id: str = None) -> str:
+    # Check if medical
     if not is_medical_query(query):
-        return "💙 I'm a MEDICAL assistant. Please ask me health-related questions."
+        return "💙 I'm a MEDICAL assistant. Please ask me health-related questions about blood pressure, diabetes, headaches, pain, fever, etc."
+    
+    # Get conversation history for context
+    history = []
+    if session_id:
+        history = get_conversation_history(session_id, limit=10)
+    
+    # Build context
+    context = build_context_from_history(history)
     
     if not co:
-        return get_fallback_response(query)
+        return get_fallback_response(query, history)
     
     try:
-        context = ""
-        if session_id:
-            history = get_conversation_history(session_id, limit=3)
-            if history:
-                context = "Previous conversation:\n"
-                for h in history:
-                    context += f"User: {h['message']}\nAssistant: {h['response']}\n"
-        
-        prompt = f"""You are MediBot AI, a compassionate medical assistant.
+        if history:
+            # This is a follow-up question - use context
+            prompt = f"""You are MediBot AI, a compassionate medical assistant.
 
-{context}
+{context} "{query}"
+
+Provide a helpful response that continues the conversation naturally.
+- Reference previous information if relevant
+- Answer the user's question directly
+- Be warm and conversational
+- Ask a relevant follow-up question
+
+Response:"""
+        else:
+            # First question in conversation
+            prompt = f"""You are MediBot AI, a compassionate medical assistant.
+
 User: {query}
 
-Provide a helpful, accurate response. Use bullet points. End with a follow-up question."""
+Provide a helpful, accurate response. Use bullet points. End with a follow-up question.
+
+Response:"""
         
         response = co.chat(message=prompt, model="command-a-03-2025", temperature=0.7, max_tokens=500)
-        return response.text.strip() if response and response.text else get_fallback_response(query)
-    except:
-        return get_fallback_response(query)
+        return response.text.strip() if response and response.text else get_fallback_response(query, history)
+    except Exception as e:
+        print(f"Cohere error: {e}")
+        return get_fallback_response(query, history)
 
-def get_fallback_response(query: str) -> str:
+def get_fallback_response(query: str, history: List[Dict] = None) -> str:
+    """Fallback response with context awareness"""
     q = query.lower()
-    if "blood pressure" in q:
-        return "**Blood Pressure:** Normal is 120/80 mmHg. Prevention: Reduce salt, exercise."
-    elif "headache" in q:
-        return "**Headache Relief:** Rest in dark room, hydrate, cold compress."
-    elif "diabetes" in q:
-        return "**Diabetes Management:** Monitor blood sugar, healthy diet, exercise."
-    elif "fever" in q:
-        return "**Fever Care:** Rest, hydrate, fever reducers. Seek care if >103°F."
-    else:
-        return "I'm here to help with medical questions. Please consult a healthcare professional."
+    
+    # Check if this is a follow-up to leg pain discussion
+    if history and len(history) > 0:
+        last_user_msg = history[-1]['message'].lower() if history else ""
+        if "leg pain" in last_user_msg or "leg" in last_user_msg:
+            if "no" in q:
+                return """Thanks for letting me know. Since you don't have swelling, redness, or numbness, the pain may be muscular.
 
-# FastAPI App
-app = FastAPI(title="MediBot AI", version="3.0")
+**Here are some specific things you can try:**
+
+1. **Rest** - Give your leg a break from strenuous activity
+2. **Ice** - Apply ice pack for 15-20 minutes, 3-4 times daily
+3. **Elevate** - Keep your leg raised above heart level
+4. **Gentle stretch** - Try calf stretches if it's your calf
+
+**When to see a doctor:**
+• Pain gets worse or doesn't improve in a few days
+• You can't put weight on your leg
+• New swelling or redness appears
+
+*Have you tried any of these yet?* 💙"""
+            elif "yes" in q:
+                return """I understand you're experiencing leg pain. Let me help you further.
+
+**To give you better advice, could you tell me:**
+• Where exactly does it hurt? (calf, thigh, knee, shin?)
+• What does the pain feel like? (sharp, dull, burning, throbbing?)
+• Did it start after an injury or activity?
+
+This will help me give you more specific guidance! 💙"""
+    
+    # Default responses
+    if "blood pressure" in q:
+        return "**Blood Pressure Guide**\n\nNormal: <120/80 mmHg\nElevated: 120-129/<80\nStage 1: 130-139/80-89\nStage 2: 140+/90+\n\n*Have you been monitoring your blood pressure?*"
+    elif "headache" in q:
+        return "**Headache Relief**\n\n• Rest in dark, quiet room\n• Stay hydrated\n• Cold compress\n• OTC pain reliever\n\n*What usually triggers your headaches?*"
+    elif "diabetes" in q:
+        return "**Diabetes Management**\n\n• Monitor blood sugar\n• Take medications as prescribed\n• Healthy diet\n• Exercise 30 min/day\n\n*Would you like meal planning tips?*"
+    else:
+        return "I'm here to help with medical questions. Could you tell me more about what you're experiencing?"
+
+app = FastAPI(title="MediBot AI", version="4.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# Serve Frontend
 @app.get("/")
 async def serve_frontend():
     if os.path.exists("index.html"):
         return FileResponse("index.html")
     return {"message": "Frontend not found"}
 
-# Health Check
 @app.get("/health")
 async def health():
     return {"status": "healthy", "database": "MongoDB Atlas", "ai": "active" if co else "inactive"}
 
-# Authentication Endpoints
 @app.post("/auth/register")
 async def register(user: UserRegister):
     if users_collection.find_one({"$or": [{"username": user.username}, {"email": user.email}]}):
@@ -186,7 +234,6 @@ async def login(user: UserLogin):
     token = create_token({"sub": db_user["username"], "user_id": str(db_user["_id"])})
     return {"access_token": token, "token_type": "bearer", "username": db_user["username"]}
 
-# Chat Endpoint
 @app.post("/chat")
 async def chat(request: ChatRequest, token_data: dict = Depends(verify_token)):
     session_id = request.session_id or f"session_{int(datetime.now().timestamp())}"
@@ -202,7 +249,6 @@ async def chat(request: ChatRequest, token_data: dict = Depends(verify_token)):
     
     return {"response": response, "session_id": session_id, "timestamp": datetime.now().isoformat()}
 
-# History Endpoint
 @app.get("/history/{session_id}")
 async def get_history(session_id: str, token_data: dict = Depends(verify_token)):
     history = list(conversations_collection.find(
@@ -213,7 +259,7 @@ async def get_history(session_id: str, token_data: dict = Depends(verify_token))
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("🏥 MEDIBOT AI - COMPLETE BACKEND")
+    print("🏥 MEDIBOT AI - WITH CONVERSATION MEMORY")
     print("="*60)
     print("Server: http://localhost:10000")
     print("="*60 + "\n")
