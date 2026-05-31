@@ -15,21 +15,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve frontend files from frontend folder
-frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
-if os.path.exists(frontend_path):
-    app.mount("/frontend", StaticFiles(directory=frontend_path), name="frontend")
-    
-    @app.get("/")
-    async def serve_frontend():
-        index_file = os.path.join(frontend_path, "simple.html")
-        if os.path.exists(index_file):
-            return FileResponse(index_file)
-        return {"message": "Frontend not found"}
+# Serve index.html at root
+@app.get("/")
+async def serve_frontend():
+    if os.path.exists("index.html"):
+        return FileResponse("index.html")
+    return {"message": "Frontend not found"}
+
+# Also serve static files
+if os.path.exists("frontend"):
+    app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "message": "MediBot AI is running"}
+    return {"status": "healthy", "database": "MongoDB Atlas"}
+
+# Auth endpoints would be here (they are in your main.py)
+# For now, just serving frontend
 
 if __name__ == "__main__":
+    print("🏥 MediBot AI Running...")
     uvicorn.run(app, host="0.0.0.0", port=10000)

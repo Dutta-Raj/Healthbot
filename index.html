@@ -1,0 +1,673 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediBot AI - Medical Assistant</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            overflow: hidden;
+        }
+        .auth-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .auth-box {
+            background: white;
+            border-radius: 28px;
+            padding: 40px;
+            width: 440px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+            animation: slideUp 0.5s ease;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .auth-box h2 {
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 32px;
+            font-size: 28px;
+        }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; color: #374151; font-weight: 500; }
+        .input-group input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 14px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+        .auth-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .auth-btn:hover { transform: translateY(-2px); }
+        .toggle-text { text-align: center; margin-top: 24px; color: #6b7280; }
+        .toggle-text a { color: #667eea; cursor: pointer; text-decoration: none; font-weight: 600; }
+        .error-msg, .success-msg { padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 13px; display: none; }
+        .error-msg { background: #fee2e2; color: #dc2626; }
+        .success-msg { background: #d1fae5; color: #059669; }
+
+        .app-container { display: flex; height: 100vh; background: #f7f9fc; }
+        .sidebar {
+            width: 320px;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #e5e7eb;
+        }
+        .sidebar-header {
+            padding: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .sidebar-header h3 { font-size: 20px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .new-chat-btn {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        .new-chat-btn:hover { background: rgba(255,255,255,0.25); }
+        .conv-header { padding: 16px 20px; border-bottom: 1px solid #e5e7eb; }
+        .conv-header span { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; }
+        .conversations-list { flex: 1; overflow-y: auto; padding: 12px; }
+        .conversation-item {
+            padding: 14px;
+            margin: 6px 0;
+            border-radius: 14px;
+            cursor: pointer;
+            background: #ffffff;
+            border: 1px solid #f0f0f0;
+            position: relative;
+            transition: all 0.2s;
+        }
+        .conversation-item:hover { background: #f9fafb; border-color: #e5e7eb; }
+        .conversation-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+        }
+        .conv-title {
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 6px;
+            padding-right: 35px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .conv-time { font-size: 11px; opacity: 0.6; }
+        .three-dots {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 8px;
+            font-size: 16px;
+            z-index: 10;
+        }
+        .three-dots:hover { background: rgba(0,0,0,0.08); }
+        .dropdown {
+            position: absolute;
+            right: 12px;
+            top: 75%;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+            z-index: 200;
+            display: none;
+            min-width: 130px;
+            overflow: hidden;
+        }
+        .dropdown.show { display: block; animation: fadeIn 0.2s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .dropdown-item {
+            padding: 10px 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #374151;
+            transition: all 0.2s;
+        }
+        .dropdown-item:hover { background: #f3f4f6; }
+        .dropdown-item.delete { color: #dc2626; }
+
+        .main-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f7f9fc;
+        }
+        .chat-header {
+            background: white;
+            padding: 20px 32px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chat-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .user-info { display: flex; align-items: center; gap: 16px; }
+        .username { font-weight: 500; color: #4b5563; }
+        .logout-btn {
+            padding: 8px 18px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .logout-btn:hover { background: #dc2626; }
+
+        .messages-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 32px;
+        }
+        .message {
+            margin-bottom: 24px;
+            animation: messageSlide 0.3s ease;
+        }
+        @keyframes messageSlide {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .user-message { text-align: right; }
+        .bot-message { text-align: left; }
+        .message-content {
+            display: inline-block;
+            max-width: 75%;
+            padding: 14px 20px;
+            border-radius: 22px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        .user-message .message-content {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom-right-radius: 6px;
+        }
+        .bot-message .message-content {
+            background: white;
+            color: #1f2937;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border: 1px solid #e5e7eb;
+            border-bottom-left-radius: 6px;
+        }
+        .message-time { font-size: 10px; margin-top: 6px; opacity: 0.5; }
+
+        .typing-indicator {
+            display: none;
+            padding: 12px 18px;
+            background: white;
+            border-radius: 24px;
+            width: fit-content;
+            margin-bottom: 20px;
+            border: 1px solid #e5e7eb;
+        }
+        .typing-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #667eea;
+            margin: 0 3px;
+            animation: typingBounce 1.4s infinite;
+        }
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        .input-area {
+            background: white;
+            padding: 20px 32px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .message-input {
+            flex: 1;
+            padding: 14px 20px;
+            border: 2px solid #e5e7eb;
+            border-radius: 24px;
+            resize: none;
+            font-family: 'Inter', sans-serif;
+            font-size: 14px;
+            transition: all 0.3s;
+            max-height: 120px;
+        }
+        .message-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+        .button-group {
+            display: flex;
+            gap: 8px;
+        }
+        .send-btn, .stop-btn {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 24px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .send-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102,126,234,0.3);
+        }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stop-btn {
+            background: #ef4444;
+            display: none;
+        }
+        .stop-btn:hover { background: #dc2626; transform: translateY(-2px); }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 28px;
+            width: 380px;
+            text-align: center;
+            animation: slideUp 0.3s ease;
+        }
+        .modal-content h3 { margin-bottom: 16px; }
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            margin: 16px 0;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+        }
+        .modal-buttons { display: flex; gap: 12px; justify-content: center; }
+        .modal-buttons button { padding: 10px 24px; border: none; border-radius: 10px; cursor: pointer; }
+        .cancel-btn { background: #9ca3af; color: white; }
+        .confirm-btn { background: #ef4444; color: white; }
+        .rename-confirm { background: #10b981; color: white; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a5b4fc; }
+    </style>
+</head>
+<body>
+    <!-- Auth Container -->
+    <div id="authContainer" class="auth-container">
+        <div class="auth-box">
+            <h2>🏥 MediBot AI</h2>
+            <div id="errorMsg" class="error-msg"></div>
+            <div id="successMsg" class="success-msg"></div>
+            <div id="loginForm">
+                <div class="input-group"><label>Username</label><input type="text" id="loginUsername" placeholder="Enter username"></div>
+                <div class="input-group"><label>Password</label><input type="password" id="loginPassword" placeholder="Enter password"></div>
+                <button class="auth-btn" onclick="login()">Login</button>
+                <div class="toggle-text">New here? <a onclick="showRegister()">Create an account</a></div>
+            </div>
+            <div id="registerForm" style="display:none;">
+                <div class="input-group"><label>Username</label><input type="text" id="regUsername" placeholder="Choose username"></div>
+                <div class="input-group"><label>Email</label><input type="email" id="regEmail" placeholder="Email address"></div>
+                <div class="input-group"><label>Password</label><input type="password" id="regPassword" placeholder="Create password"></div>
+                <div class="input-group"><label>Confirm Password</label><input type="password" id="regConfirmPassword" placeholder="Confirm password"></div>
+                <div class="input-group"><label>Full Name (Optional)</label><input type="text" id="regFullName" placeholder="Your full name"></div>
+                <button class="auth-btn" onclick="register()">Register</button>
+                <div class="toggle-text">Already have an account? <a onclick="showLogin()">Login here</a></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="appContainer" class="app-container" style="display:none;">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h3>🏥 MediBot AI</h3>
+                <button class="new-chat-btn" onclick="newChat()">+ New Chat</button>
+            </div>
+            <div class="conv-header"><span>Recent Conversations</span></div>
+            <div class="conversations-list" id="convList"></div>
+        </div>
+        <div class="main-chat">
+            <div class="chat-header">
+                <h2 id="chatTitle">Medical Assistant</h2>
+                <div class="user-info"><span class="username" id="username"></span><button class="logout-btn" onclick="logout()">Logout</button></div>
+            </div>
+            <div class="messages-area" id="messages"></div>
+            <div class="input-area">
+                <div class="typing-indicator" id="typingIndicator"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>
+                <div class="input-container">
+                    <textarea class="message-input" id="messageInput" placeholder="Type your medical question here... (e.g., leg pain, blood pressure, headache)" rows="1"></textarea>
+                    <div class="button-group">
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                        <button class="stop-btn" id="stopBtn" onclick="stopGeneration()">Stop</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="renameModal" class="modal"><div class="modal-content"><h3>Rename Conversation</h3><input id="renameInput" placeholder="New name"><div class="modal-buttons"><button class="cancel-btn" onclick="closeRename()">Cancel</button><button class="rename-confirm" onclick="confirmRename()">Rename</button></div></div></div>
+    <div id="deleteModal" class="modal"><div class="modal-content"><h3>Delete Conversation</h3><p>Delete this conversation?</p><div class="modal-buttons"><button class="cancel-btn" onclick="closeDelete()">Cancel</button><button class="confirm-btn" onclick="confirmDelete()">Delete</button></div></div></div>
+
+    <script>
+        const API_URL = window.location.origin;
+        let token = null, user = null, currentSession = null, conversations = [], pendingId = null;
+        let isStreaming = false;
+        let currentStreamingDiv = null;
+        let streamingContent = "";
+        let isStopped = false;
+        let pendingContinue = null;
+
+        // Auto-resize textarea
+        const textarea = document.getElementById('messageInput');
+        if(textarea) {
+            textarea.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'; });
+            textarea.addEventListener('keypress', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+        }
+
+        async function register() {
+            const username = document.getElementById('regUsername').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const confirm = document.getElementById('regConfirmPassword').value;
+            const full_name = document.getElementById('regFullName').value;
+
+            if (!username || !email || !password) { showError('Please fill all required fields'); return; }
+            if (password !== confirm) { showError('Passwords do not match'); return; }
+            try {
+                const res = await fetch(`${API_URL}/auth/register`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, email, password, full_name })
+                });
+                const data = await res.json();
+                if (res.ok) { showSuccess('Registration successful! Please login.'); showLogin(); }
+                else { showError(data.detail || 'Registration failed'); }
+            } catch(e) { showError('Error: ' + e.message); }
+        }
+
+        async function login() {
+            const username = document.getElementById('loginUsername').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            if (!username || !password) { showError('Please enter username and password'); return; }
+            try {
+                const res = await fetch(`${API_URL}/auth/login`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    token = data.access_token;
+                    user = data.username;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('user', user);
+                    document.getElementById('username').innerText = user;
+                    document.getElementById('authContainer').style.display = 'none';
+                    document.getElementById('appContainer').style.display = 'flex';
+                    loadConversations();
+                    newChat();
+                } else { showError(data.detail || 'Invalid credentials'); }
+            } catch(e) { showError('Error: ' + e.message); }
+        }
+
+        function logout() { localStorage.clear(); location.reload(); }
+        function showRegister() { document.getElementById('loginForm').style.display = 'none'; document.getElementById('registerForm').style.display = 'block'; hideMessages(); }
+        function showLogin() { document.getElementById('registerForm').style.display = 'none'; document.getElementById('loginForm').style.display = 'block'; hideMessages(); }
+        function showError(msg) { const d = document.getElementById('errorMsg'); d.textContent = msg; d.style.display = 'block'; setTimeout(() => d.style.display = 'none', 3000); }
+        function showSuccess(msg) { const d = document.getElementById('successMsg'); d.textContent = msg; d.style.display = 'block'; setTimeout(() => d.style.display = 'none', 3000); }
+        function hideMessages() { document.getElementById('errorMsg').style.display = 'none'; document.getElementById('successMsg').style.display = 'none'; }
+
+        function loadConversations() { let saved = localStorage.getItem(`conv_${user}`); if(saved) conversations = JSON.parse(saved); renderConvs(); }
+        function saveConvs() { localStorage.setItem(`conv_${user}`, JSON.stringify(conversations)); }
+
+        function renderConvs() {
+            let container = document.getElementById('convList');
+            if(!container) return;
+            container.innerHTML = conversations.map(c => `
+                <div class="conversation-item ${c.id === currentSession ? 'active' : ''}" onclick="selectChat('${c.id}')">
+                    <div class="conv-title">${escapeHtml(c.title)}</div>
+                    <div class="conv-time">${formatTime(c.timestamp)}</div>
+                    <div class="three-dots" onclick="event.stopPropagation(); showMenu(event, '${c.id}')">⋮</div>
+                    <div class="dropdown" id="menu_${c.id}">
+                        <div class="dropdown-item" onclick="event.stopPropagation(); showRename('${c.id}')">✏️ Rename</div>
+                        <div class="dropdown-item delete" onclick="event.stopPropagation(); showDelete('${c.id}')">🗑️ Delete</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showMenu(event, id) { let menu = document.getElementById(`menu_${id}`); document.querySelectorAll('.dropdown').forEach(m => { if(m !== menu) m.classList.remove('show'); }); menu.classList.toggle('show'); }
+        function showRename(id) { pendingId = id; document.getElementById('renameModal').style.display = 'flex'; }
+        function showDelete(id) { pendingId = id; document.getElementById('deleteModal').style.display = 'flex'; }
+        function closeRename() { document.getElementById('renameModal').style.display = 'none'; pendingId = null; document.getElementById('renameInput').value = ''; }
+        function closeDelete() { document.getElementById('deleteModal').style.display = 'none'; pendingId = null; }
+        function confirmRename() {
+            let newName = document.getElementById('renameInput').value;
+            if(pendingId && newName) {
+                let conv = conversations.find(c => c.id === pendingId);
+                if(conv) conv.title = newName;
+                saveConvs(); renderConvs();
+                if(currentSession === pendingId) document.getElementById('chatTitle').innerText = newName;
+            }
+            closeRename();
+        }
+        function confirmDelete() {
+            if(pendingId) {
+                let idx = conversations.findIndex(c => c.id === pendingId);
+                if(idx !== -1) conversations.splice(idx, 1);
+                saveConvs();
+                if(currentSession === pendingId) conversations.length ? selectChat(conversations[0].id) : newChat();
+                else renderConvs();
+            }
+            closeDelete();
+        }
+
+        async function selectChat(id) {
+            currentSession = id;
+            renderConvs();
+            document.getElementById('chatTitle').innerText = conversations.find(c => c.id === id)?.title || 'Chat';
+            document.getElementById('messages').innerHTML = '';
+            try {
+                let res = await fetch(`${API_URL}/history/${id}`, { headers: { 'Authorization': `Bearer ${token}` } });
+                let data = await res.json();
+                if(data.history) data.history.forEach(msg => {
+                    addMessage('user', msg.message, msg.timestamp);
+                    addMessage('bot', msg.response, msg.timestamp);
+                });
+            } catch(e) { console.log(e); }
+        }
+
+        async function streamResponse(text) {
+            const messagesArea = document.getElementById('messages');
+            if (!currentStreamingDiv) {
+                currentStreamingDiv = document.createElement('div');
+                currentStreamingDiv.className = 'message bot-message';
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'message-content';
+                currentStreamingDiv.appendChild(contentDiv);
+                messagesArea.appendChild(currentStreamingDiv);
+                streamingContent = "";
+            }
+            
+            const contentDiv = currentStreamingDiv.querySelector('.message-content');
+            
+            for (let i = streamingContent.length; i < text.length; i++) {
+                if (isStopped) {
+                    const stopDiv = document.createElement('div');
+                    stopDiv.className = 'stopped-message';
+                    stopDiv.innerHTML = '⚠️ Response generation stopped. <button class="continue-btn" onclick="continueResponse()">▶️ Continue</button>';
+                    currentStreamingDiv.appendChild(stopDiv);
+                    return;
+                }
+                streamingContent += text[i];
+                contentDiv.innerHTML = escapeHtml(streamingContent).replace(/\n/g, '<br>');
+                messagesArea.scrollTop = messagesArea.scrollHeight;
+                await new Promise(r => setTimeout(r, 15));
+            }
+            
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.innerText = new Date().toLocaleTimeString();
+            contentDiv.appendChild(timeDiv);
+            currentStreamingDiv = null;
+            streamingContent = "";
+            isStopped = false;
+        }
+
+        function stopGeneration() { isStopped = true; document.getElementById('stopBtn').style.display = 'none'; }
+        function continueResponse() { isStopped = false; if (currentStreamingDiv) { const stopDiv = currentStreamingDiv.querySelector('.stopped-message'); if (stopDiv) stopDiv.remove(); } }
+
+        async function newChat() {
+            currentSession = 's_' + Date.now();
+            conversations.unshift({ id: currentSession, title: 'New Chat', timestamp: new Date().toISOString() });
+            saveConvs(); renderConvs();
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('chatTitle').innerText = 'New Chat';
+            addMessage('bot', 'Hello! 👋 I\'m MediBot AI, your medical assistant.\n\nI can help you with:\n• Blood pressure information\n• Headache relief tips\n• Leg pain guidance\n• Diabetes management\n• Fever care\n\nWhat health concern can I help with today?');
+        }
+
+        async function sendMessage() {
+            if (isStreaming) return;
+            let input = document.getElementById('messageInput');
+            let msg = input.value.trim();
+            if (!msg) return;
+            
+            addMessage('user', msg);
+            input.value = '';
+            input.style.height = 'auto';
+            
+            isStreaming = true;
+            isStopped = false;
+            currentStreamingDiv = null;
+            streamingContent = "";
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('stopBtn').style.display = 'block';
+            document.getElementById('typingIndicator').style.display = 'flex';
+            
+            try {
+                const res = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ message: msg, session_id: currentSession })
+                });
+                const data = await res.json();
+                document.getElementById('typingIndicator').style.display = 'none';
+                await streamResponse(data.response);
+                
+                let conv = conversations.find(c => c.id === currentSession);
+                if(conv && conv.title === 'New Chat') {
+                    conv.title = msg.substring(0, 30) + (msg.length > 30 ? '...' : '');
+                    saveConvs(); renderConvs();
+                    document.getElementById('chatTitle').innerText = conv.title;
+                }
+            } catch(e) {
+                document.getElementById('typingIndicator').style.display = 'none';
+                addMessage('bot', 'Sorry, I encountered an error. Please try again.');
+            } finally {
+                isStreaming = false;
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('stopBtn').style.display = 'none';
+            }
+        }
+
+        function addMessage(role, text, time) {
+            let container = document.getElementById('messages');
+            let div = document.createElement('div');
+            div.className = `message ${role === 'user' ? 'user-message' : 'bot-message'}`;
+            let timestamp = time ? new Date(time).toLocaleTimeString() : new Date().toLocaleTimeString();
+            div.innerHTML = `<div class="message-content">${escapeHtml(text).replace(/\n/g, '<br>')}<div class="message-time">${timestamp}</div></div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function formatTime(ts) { let date = new Date(ts), now = new Date(), diff = now - date; if(diff < 60000) return 'Just now'; if(diff < 3600000) return `${Math.floor(diff/60000)} min ago`; if(diff < 86400000) return `${Math.floor(diff/3600000)} hours ago`; return date.toLocaleDateString(); }
+        function escapeHtml(text) { const div = document.createElement('div'); div.textContent = text; return div.innerHTML; }
+
+        let savedToken = localStorage.getItem('token');
+        let savedUser = localStorage.getItem('user');
+        if(savedToken && savedUser) {
+            token = savedToken;
+            user = savedUser;
+            document.getElementById('username').innerText = user;
+            document.getElementById('authContainer').style.display = 'none';
+            document.getElementById('appContainer').style.display = 'flex';
+            loadConversations();
+            newChat();
+        }
+    </script>
+</body>
+</html>
