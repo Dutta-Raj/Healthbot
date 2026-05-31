@@ -1,4 +1,4 @@
-﻿# main.py - Complete Medical Chatbot with AI, Memory, and Authentication
+﻿# main.py - Complete Medical Chatbot with Frontend Serving
 import os
 import jwt
 import bcrypt
@@ -7,6 +7,8 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -97,9 +99,9 @@ async def get_conversation_history(session_id: str, limit: int = 5):
     history.reverse()
     return history
 
-async def generate_response(query: str, session_id: str = None) -> str:
+async function generate_response(query: str, session_id: str = None) -> str:
     if not is_medical_query(query):
-        return "💙 I'm a MEDICAL assistant. Please ask me health-related questions about blood pressure, diabetes, headaches, fever, or general wellness."
+        return "💙 I'm a MEDICAL assistant. Please ask me health-related questions."
     
     if not co:
         return get_fallback_response(query)
@@ -118,8 +120,7 @@ async def generate_response(query: str, session_id: str = None) -> str:
 {context}
 User: {query}
 
-Provide a helpful, accurate response. Use bullet points. End with a follow-up question.
-Remember: This is educational, not medical advice."""
+Provide a helpful, accurate response. Use bullet points. End with a follow-up question."""
         
         response = co.chat(message=prompt, model="command-a-03-2025", temperature=0.7, max_tokens=500)
         return response.text.strip() if response and response.text else get_fallback_response(query)
@@ -129,21 +130,33 @@ Remember: This is educational, not medical advice."""
 def get_fallback_response(query: str) -> str:
     q = query.lower()
     if "blood pressure" in q:
-        return "**Blood Pressure:** Normal is 120/80 mmHg. Prevention: Reduce salt, exercise, maintain healthy weight."
+        return "**Blood Pressure:** Normal is 120/80 mmHg. Prevention: Reduce salt, exercise."
     elif "headache" in q:
-        return "**Headache Relief:** Rest in dark room, hydrate, cold compress. See doctor if severe or persistent."
+        return "**Headache Relief:** Rest in dark room, hydrate, cold compress."
     elif "diabetes" in q:
-        return "**Diabetes Management:** Monitor blood sugar, healthy diet, exercise, take medications as prescribed."
-    elif "fever" in q:
-        return "**Fever Care:** Rest, hydrate, fever reducers. Seek care if >103°F or >3 days."
+        return "**Diabetes Management:** Monitor blood sugar, healthy diet, exercise."
     else:
-        return f"I'm here to help with medical questions. Regarding '{query[:100]}', please consult a healthcare professional."
+        return "I'm here to help with medical questions. Please consult a healthcare professional."
 
 # FastAPI App
 app = FastAPI(title="MediBot AI", version="3.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-@app.get("/")
+# Serve Frontend Files
+frontend_path = os.path.join(os.path.dirname(__file__), "src/frontend")
+if os.path.exists(frontend_path):
+    # Mount static files
+    app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+    
+    # Serve frontend at root
+    @app.get("/")
+    async def serve_frontend():
+        index_file = os.path.join(frontend_path, "frontend_complete.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        return {"message": "Frontend not found", "status": "error"}
+
+# API Endpoints
 @app.get("/health")
 async def health():
     return {"status": "healthy", "database": "MongoDB Atlas", "ai": "active" if co else "inactive"}
@@ -201,5 +214,6 @@ if __name__ == "__main__":
     print("🏥 MEDIBOT AI - INTELLIGENT MEDICAL ASSISTANT")
     print("="*60)
     print("Server: http://localhost:8000")
+    print("Frontend: http://localhost:8000/")
     print("="*60 + "\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
