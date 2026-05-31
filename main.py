@@ -1,4 +1,4 @@
-﻿# main.py - Pure AI responses with memory
+﻿# main.py - Complete Medical Chatbot with Conclusive Advice
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 import cohere
 import uvicorn
+import re
 
 load_dotenv()
 
@@ -75,63 +76,72 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     except:
         raise HTTPException(401, "Invalid token")
 
-def get_conversation_history(session_id: str, limit: int = 15):
+def get_conversation_history(session_id: str, limit: int = 20):
     history = list(conversations_collection.find(
         {"session_id": session_id},
         {"_id": 0, "message": 1, "response": 1}
     ).sort("timestamp", 1).limit(limit))
     return history
 
-def generate_pure_ai_response(query: str, session_id: str = None) -> str:
-    """Generate pure AI response - NO pre-defined answers"""
-    
-    # Get conversation history
-    history = []
-    if session_id:
-        history = get_conversation_history(session_id, limit=15)
+def generate_chat_title(messages: List[Dict]) -> str:
+    """Generate chat title from first user message"""
+    for msg in messages:
+        if msg.get('message'):
+            text = msg['message'][:50]
+            if len(text) > 40:
+                return text[:40] + "..."
+            return text
+    return "New Chat"
+
+def generate_conclusive_response(query: str, history: List[Dict]) -> str:
+    """Generate conclusive medical advice - not endless questions"""
     
     # Build context
     context = ""
     if history:
         context = "Previous conversation:\n"
-        for h in history[-10:]:
+        for h in history[-8:]:
             context += f"User: {h['message']}\nAssistant: {h['response']}\n"
-        context += f"\nContinue naturally. User just said: {query}\n"
+    
+    # Count how many questions have been asked
+    question_count = sum(1 for h in history if '?' in h.get('response', ''))
     
     if not co:
-        return "I'm an AI medical assistant. Please ask me any health-related question."
+        return "I'm an AI medical assistant. Please consult a doctor for medical advice."
     
     try:
-        if context:
-            prompt = f"""You are MediBot AI, a warm, helpful medical assistant. Continue this conversation naturally.
+        if question_count >= 3:
+            # After 3 questions, provide a conclusive answer
+            prompt = f"""You are MediBot AI, a medical assistant. The user has shared their symptoms. Now provide a HELPFUL CONCLUSION.
 
 {context}
 
 Instructions:
-- DO NOT start over - continue the flow
-- Reference what was said earlier
-- Answer directly without repeating previous information
-- Be conversational, warm, and helpful
-- Ask a relevant follow-up question
-- NO pre-defined templates - respond naturally
+- Based on the information gathered, provide SPECIFIC advice
+- Recommend home remedies or treatments
+- Clearly state when to see a doctor
+- DO NOT ask more than 1 follow-up question
+- Be practical and helpful
 
-Your response:"""
+Your response (conclusive advice):"""
         else:
-            prompt = f"""You are MediBot AI, a warm, helpful medical assistant.
+            # Normal response but limit to 1-2 questions
+            prompt = f"""You are MediBot AI, a medical assistant.
 
+{context}
 User: {query}
 
-Provide a helpful, natural, conversational response. Be warm and empathetic. Ask a follow-up question.
+Provide a helpful response. You may ask 1-2 clarifying questions maximum. Then provide practical advice.
 
 Response:"""
         
-        response = co.chat(message=prompt, model="command-a-03-2025", temperature=0.8, max_tokens=600)
-        return response.text.strip() if response and response.text else "I'm here to help with your health questions. Could you tell me more?"
+        response = co.chat(message=prompt, model="command-a-03-2025", temperature=0.7, max_tokens=500)
+        return response.text.strip() if response and response.text else "I'm here to help with your health concerns."
     except Exception as e:
         print(f"Cohere error: {e}")
-        return "I'm here to help with your health concerns. Could you please provide more details?"
+        return "I'm here to help with your health concerns. Please consult a healthcare professional for medical advice."
 
-app = FastAPI(title="MediBot AI", version="6.0")
+app = FastAPI(title="MediBot AI", version="7.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 @app.get("/")
@@ -172,8 +182,14 @@ async def login(user: UserLogin):
 @app.post("/chat")
 async def chat(request: ChatRequest, token_data: dict = Depends(verify_token)):
     session_id = request.session_id or f"session_{int(datetime.now().timestamp())}"
-    response = generate_pure_ai_response(request.message, session_id)
     
+    # Get history for context and title generation
+    history = get_conversation_history(session_id, limit=20)
+    
+    # Generate response
+    response = generate_conclusive_response(request.message, history)
+    
+    # Save conversation
     conversations_collection.insert_one({
         "user_id": token_data.get("user_id"),
         "session_id": session_id,
@@ -190,11 +206,19 @@ async def get_history(session_id: str, token_data: dict = Depends(verify_token))
         {"session_id": session_id, "user_id": token_data.get("user_id")},
         {"_id": 0, "message": 1, "response": 1, "timestamp": 1}
     ).sort("timestamp", 1))
-    return {"history": history}
+    
+    # Generate title from first message if available
+    title = "New Chat"
+    for msg in history:
+        if msg.get('message'):
+            title = msg['message'][:40] + ("..." if len(msg['message']) > 40 else "")
+            break
+    
+    return {"history": history, "title": title}
 
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("🏥 MEDIBOT AI - PURE AI RESPONSES")
+    print("🏥 MEDIBOT AI - CONCLUSIVE ADVICE")
     print("="*60)
     print("Server: http://localhost:10000")
     print("="*60 + "\n")
