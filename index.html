@@ -5,11 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediBot AI - 3D Medical Assistant</title>
     
-    <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100;14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
-    <!-- Three.js for 3D effects -->
     <script type="importmap">
         {
             "imports": {
@@ -19,39 +17,16 @@
     </script>
     
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', sans-serif;
             background: #0a0a0a;
             overflow: hidden;
             color: #fff;
         }
-
-        /* 3D Canvas Background */
-        #canvas-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-        }
-
-        /* Glassmorphism Container */
-        .glass-container {
-            position: relative;
-            z-index: 10;
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            backdrop-filter: blur(0px);
-        }
-
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+        .glass-container { position: relative; z-index: 10; width: 100%; height: 100vh; display: flex; backdrop-filter: blur(0px); }
+        
         /* Auth Modal */
         .auth-modal {
             position: fixed;
@@ -67,7 +42,6 @@
             z-index: 1000;
             transition: all 0.5s ease;
         }
-
         .auth-card {
             background: rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(20px);
@@ -75,21 +49,12 @@
             border-radius: 32px;
             padding: 48px;
             width: 480px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             animation: floatIn 0.6s ease;
         }
-
         @keyframes floatIn {
-            from {
-                opacity: 0;
-                transform: translateY(30px) scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
+            from { opacity: 0; transform: translateY(30px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
-
         .auth-card h2 {
             font-size: 32px;
             font-weight: 700;
@@ -99,19 +64,8 @@
             -webkit-text-fill-color: transparent;
             margin-bottom: 32px;
         }
-
-        .input-group {
-            margin-bottom: 20px;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 14px;
-            font-weight: 500;
-        }
-
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; color: rgba(255, 255, 255, 0.7); font-size: 14px; font-weight: 500; }
         .input-group input {
             width: 100%;
             padding: 14px 18px;
@@ -122,13 +76,7 @@
             font-size: 14px;
             transition: all 0.3s;
         }
-
-        .input-group input:focus {
-            outline: none;
-            border-color: #667eea;
-            background: rgba(255, 255, 255, 0.12);
-        }
-
+        .input-group input:focus { outline: none; border-color: #667eea; background: rgba(255, 255, 255, 0.12); }
         .auth-btn {
             width: 100%;
             padding: 14px;
@@ -141,33 +89,12 @@
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
         }
-
-        .auth-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
-        }
-
-        .toggle-link {
-            text-align: center;
-            margin-top: 24px;
-            color: rgba(255, 255, 255, 0.6);
-        }
-
-        .toggle-link a {
-            color: #667eea;
-            cursor: pointer;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
+        .auth-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4); }
+        .toggle-link { text-align: center; margin-top: 24px; color: rgba(255, 255, 255, 0.6); }
+        .toggle-link a { color: #667eea; cursor: pointer; text-decoration: none; font-weight: 600; }
+        
         /* Main App Layout */
-        .app-layout {
-            display: none;
-            width: 100%;
-            height: 100vh;
-        }
-
-        /* Sidebar */
+        .app-layout { display: none; width: 100%; height: 100vh; }
         .sidebar {
             width: 320px;
             background: rgba(255, 255, 255, 0.03);
@@ -177,12 +104,7 @@
             flex-direction: column;
             z-index: 20;
         }
-
-        .sidebar-header {
-            padding: 24px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
+        .sidebar-header { padding: 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
         .logo {
             font-size: 24px;
             font-weight: 700;
@@ -191,7 +113,6 @@
             -webkit-text-fill-color: transparent;
             margin-bottom: 20px;
         }
-
         .new-chat-btn {
             width: 100%;
             padding: 12px;
@@ -207,18 +128,8 @@
             gap: 8px;
             transition: all 0.3s;
         }
-
-        .new-chat-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-
-        .conv-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px;
-        }
-
+        .new-chat-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
+        .conv-list { flex: 1; overflow-y: auto; padding: 16px; }
         .conv-item {
             padding: 14px;
             margin-bottom: 8px;
@@ -229,29 +140,13 @@
             transition: all 0.3s;
             position: relative;
         }
-
-        .conv-item:hover {
-            background: rgba(255, 255, 255, 0.1);
-            transform: translateX(5px);
-        }
-
+        .conv-item:hover { background: rgba(255, 255, 255, 0.1); transform: translateX(5px); }
         .conv-item.active {
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
             border-color: rgba(102, 126, 234, 0.5);
         }
-
-        .conv-title {
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 4px;
-            padding-right: 35px;
-        }
-
-        .conv-time {
-            font-size: 11px;
-            opacity: 0.5;
-        }
-
+        .conv-title { font-size: 14px; font-weight: 500; margin-bottom: 4px; padding-right: 35px; }
+        .conv-time { font-size: 11px; opacity: 0.5; }
         .conv-menu {
             position: absolute;
             right: 12px;
@@ -263,11 +158,7 @@
             opacity: 0;
             transition: opacity 0.3s;
         }
-
-        .conv-item:hover .conv-menu {
-            opacity: 1;
-        }
-
+        .conv-item:hover .conv-menu { opacity: 1; }
         .conv-dropdown {
             position: absolute;
             right: 12px;
@@ -281,11 +172,7 @@
             display: none;
             z-index: 100;
         }
-
-        .conv-dropdown.show {
-            display: block;
-        }
-
+        .conv-dropdown.show { display: block; }
         .conv-dropdown-item {
             padding: 8px 12px;
             cursor: pointer;
@@ -293,23 +180,11 @@
             transition: all 0.2s;
             font-size: 13px;
         }
-
-        .conv-dropdown-item:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .conv-dropdown-item.delete {
-            color: #ff6b6b;
-        }
-
+        .conv-dropdown-item:hover { background: rgba(255, 255, 255, 0.1); }
+        .conv-dropdown-item.delete { color: #ff6b6b; }
+        
         /* Main Chat Area */
-        .main-chat {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            z-index: 20;
-        }
-
+        .main-chat { flex: 1; display: flex; flex-direction: column; z-index: 20; }
         .chat-header {
             padding: 20px 32px;
             background: rgba(255, 255, 255, 0.03);
@@ -319,22 +194,9 @@
             justify-content: space-between;
             align-items: center;
         }
-
-        .chat-header h2 {
-            font-size: 20px;
-            font-weight: 600;
-        }
-
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .username {
-            opacity: 0.8;
-        }
-
+        .chat-header h2 { font-size: 20px; font-weight: 600; }
+        .user-info { display: flex; align-items: center; gap: 16px; }
+        .username { opacity: 0.8; }
         .logout-btn {
             padding: 8px 20px;
             background: rgba(220, 53, 69, 0.2);
@@ -344,42 +206,14 @@
             cursor: pointer;
             transition: all 0.3s;
         }
-
-        .logout-btn:hover {
-            background: rgba(220, 53, 69, 0.3);
-        }
-
+        .logout-btn:hover { background: rgba(220, 53, 69, 0.3); }
+        
         /* Messages Area */
-        .messages-area {
-            flex: 1;
-            overflow-y: auto;
-            padding: 24px 32px;
-        }
-
-        .message {
-            margin-bottom: 24px;
-            animation: messageAppear 0.4s ease;
-        }
-
-        @keyframes messageAppear {
-            from {
-                opacity: 0;
-                transform: translateY(15px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .user-message {
-            text-align: right;
-        }
-
-        .bot-message {
-            text-align: left;
-        }
-
+        .messages-area { flex: 1; overflow-y: auto; padding: 24px 32px; }
+        .message { margin-bottom: 24px; animation: messageAppear 0.4s ease; }
+        @keyframes messageAppear { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .user-message { text-align: right; }
+        .bot-message { text-align: left; }
         .message-bubble {
             display: inline-block;
             max-width: 70%;
@@ -389,24 +223,17 @@
             line-height: 1.6;
             position: relative;
         }
-
         .user-message .message-bubble {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-bottom-right-radius: 6px;
         }
-
         .bot-message .message-bubble {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-bottom-left-radius: 6px;
         }
-
-        .message-time {
-            font-size: 10px;
-            opacity: 0.5;
-            margin-top: 6px;
-        }
-
+        .message-time { font-size: 10px; opacity: 0.5; margin-top: 6px; }
+        
         /* Typing Indicator */
         .typing-indicator {
             display: none;
@@ -417,7 +244,6 @@
             width: fit-content;
             margin-bottom: 20px;
         }
-
         .typing-dot {
             display: inline-block;
             width: 8px;
@@ -427,15 +253,10 @@
             margin: 0 3px;
             animation: typingBounce 1.4s infinite;
         }
-
-        @keyframes typingBounce {
-            0%, 60%, 100% { transform: translateY(0); }
-            30% { transform: translateY(-10px); }
-        }
-
+        @keyframes typingBounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-10px); } }
         .typing-dot:nth-child(2) { animation-delay: 0.2s; }
         .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
+        
         /* Input Area */
         .input-area {
             padding: 20px 32px;
@@ -443,13 +264,7 @@
             backdrop-filter: blur(10px);
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
-
-        .input-container {
-            display: flex;
-            gap: 12px;
-            align-items: flex-end;
-        }
-
+        .input-container { display: flex; gap: 12px; align-items: flex-end; }
         .message-input {
             flex: 1;
             padding: 14px 20px;
@@ -462,47 +277,37 @@
             resize: none;
             transition: all 0.3s;
         }
-
-        .message-input:focus {
-            outline: none;
-            border-color: #667eea;
-            background: rgba(255, 255, 255, 0.12);
-        }
-
-        .message-input::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-
-        .send-btn {
+        .message-input:focus { outline: none; border-color: #667eea; background: rgba(255, 255, 255, 0.12); }
+        .message-input::placeholder { color: rgba(255, 255, 255, 0.4); }
+        
+        .button-group { display: flex; gap: 8px; }
+        .send-btn, .stop-btn, .continue-btn {
             padding: 14px 28px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
             border-radius: 24px;
-            color: white;
-            font-weight: 600;
             cursor: pointer;
+            font-weight: 600;
             transition: all 0.3s;
         }
-
-        .send-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        .send-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
         }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
+        .send-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stop-btn {
+            background: #dc3545;
+            color: white;
+            display: none;
         }
-
-        ::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
+        .stop-btn:hover { background: #c82333; transform: translateY(-2px); }
+        .continue-btn {
+            background: #28a745;
+            color: white;
+            display: none;
         }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(102, 126, 234, 0.5);
-            border-radius: 3px;
-        }
-
+        .continue-btn:hover { background: #218838; transform: translateY(-2px); }
+        
         /* Modals */
         .modal {
             display: none;
@@ -517,7 +322,6 @@
             align-items: center;
             z-index: 2000;
         }
-
         .modal-content {
             background: rgba(255, 255, 255, 0.08);
             backdrop-filter: blur(20px);
@@ -527,7 +331,6 @@
             width: 380px;
             text-align: center;
         }
-
         .modal-content input {
             width: 100%;
             padding: 12px;
@@ -537,25 +340,12 @@
             border-radius: 12px;
             color: white;
         }
-
-        .modal-buttons {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            margin-top: 20px;
-        }
-
-        .modal-buttons button {
-            padding: 8px 20px;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-        }
-
+        .modal-buttons { display: flex; gap: 12px; justify-content: center; margin-top: 20px; }
+        .modal-buttons button { padding: 8px 20px; border: none; border-radius: 10px; cursor: pointer; }
         .cancel-btn { background: #6c757d; color: white; }
         .confirm-btn { background: #dc3545; color: white; }
         .rename-confirm { background: #28a745; color: white; }
-
+        
         .error-msg, .success-msg {
             padding: 12px;
             border-radius: 12px;
@@ -565,53 +355,37 @@
         }
         .error-msg { background: rgba(220, 53, 69, 0.2); color: #ff6b6b; }
         .success-msg { background: rgba(40, 167, 69, 0.2); color: #51cf66; }
+        
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(102, 126, 234, 0.5); border-radius: 3px; }
     </style>
 </head>
 <body>
     <div id="canvas-container"></div>
 
-    <!-- Auth Modal -->
     <div id="authModal" class="auth-modal">
         <div class="auth-card">
             <h2>🏥 MediBot AI</h2>
             <div id="errorMsg" class="error-msg"></div>
             <div id="successMsg" class="success-msg"></div>
             <div id="loginForm">
-                <div class="input-group">
-                    <label>Username</label>
-                    <input type="text" id="loginUsername" placeholder="Enter username">
-                </div>
-                <div class="input-group">
-                    <label>Password</label>
-                    <input type="password" id="loginPassword" placeholder="Enter password">
-                </div>
+                <div class="input-group"><label>Username</label><input type="text" id="loginUsername" placeholder="Enter username"></div>
+                <div class="input-group"><label>Password</label><input type="password" id="loginPassword" placeholder="Enter password"></div>
                 <button class="auth-btn" onclick="login()">Login</button>
                 <div class="toggle-link">New here? <a onclick="showRegister()">Create account</a></div>
             </div>
             <div id="registerForm" style="display:none;">
-                <div class="input-group">
-                    <label>Username</label>
-                    <input type="text" id="regUsername" placeholder="Choose username">
-                </div>
-                <div class="input-group">
-                    <label>Email</label>
-                    <input type="email" id="regEmail" placeholder="Email address">
-                </div>
-                <div class="input-group">
-                    <label>Password</label>
-                    <input type="password" id="regPassword" placeholder="Create password">
-                </div>
-                <div class="input-group">
-                    <label>Confirm Password</label>
-                    <input type="password" id="regConfirmPassword" placeholder="Confirm password">
-                </div>
+                <div class="input-group"><label>Username</label><input type="text" id="regUsername" placeholder="Choose username"></div>
+                <div class="input-group"><label>Email</label><input type="email" id="regEmail" placeholder="Email address"></div>
+                <div class="input-group"><label>Password</label><input type="password" id="regPassword" placeholder="Create password"></div>
+                <div class="input-group"><label>Confirm Password</label><input type="password" id="regConfirmPassword" placeholder="Confirm password"></div>
                 <button class="auth-btn" onclick="register()">Register</button>
                 <div class="toggle-link">Already have an account? <a onclick="showLogin()">Login</a></div>
             </div>
         </div>
     </div>
 
-    <!-- Main App -->
     <div id="appContainer" class="app-layout">
         <div class="sidebar">
             <div class="sidebar-header">
@@ -623,80 +397,53 @@
         <div class="main-chat">
             <div class="chat-header">
                 <h2 id="chatTitle">Medical Assistant</h2>
-                <div class="user-info">
-                    <span class="username" id="username"></span>
-                    <button class="logout-btn" onclick="logout()">Logout</button>
-                </div>
+                <div class="user-info"><span class="username" id="username"></span><button class="logout-btn" onclick="logout()">Logout</button></div>
             </div>
             <div class="messages-area" id="messages"></div>
             <div class="input-area">
-                <div class="typing-indicator" id="typingIndicator">
-                    <span class="typing-dot"></span>
-                    <span class="typing-dot"></span>
-                    <span class="typing-dot"></span>
-                </div>
+                <div class="typing-indicator" id="typingIndicator"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>
                 <div class="input-container">
                     <textarea class="message-input" id="messageInput" placeholder="Ask me anything about health..." rows="1"></textarea>
-                    <button class="send-btn" onclick="sendMessage()">Send</button>
+                    <div class="button-group">
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                        <button class="stop-btn" id="stopBtn" onclick="stopGeneration()">Stop</button>
+                        <button class="continue-btn" id="continueBtn" onclick="continueGeneration()">Continue</button>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Modals -->
     <div id="renameModal" class="modal"><div class="modal-content"><h3>Rename Conversation</h3><input id="renameInput" placeholder="New name"><div class="modal-buttons"><button class="cancel-btn" onclick="closeRename()">Cancel</button><button class="rename-confirm" onclick="confirmRename()">Rename</button></div></div></div>
     <div id="deleteModal" class="modal"><div class="modal-content"><h3>Delete Conversation</h3><p>Delete this conversation?</p><div class="modal-buttons"><button class="cancel-btn" onclick="closeDelete()">Cancel</button><button class="confirm-btn" onclick="confirmDelete()">Delete</button></div></div></div>
 
     <script type="module">
-        // Three.js 3D Background
         import * as THREE from 'three';
-
         const container = document.getElementById('canvas-container');
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0a0a0a);
-        
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 30;
-        
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
         
-        // Particles
         const particlesGeometry = new THREE.BufferGeometry();
         const particlesCount = 2000;
         const posArray = new Float32Array(particlesCount * 3);
-        
         for(let i = 0; i < particlesCount * 3; i += 3) {
             posArray[i] = (Math.random() - 0.5) * 200;
             posArray[i+1] = (Math.random() - 0.5) * 100;
             posArray[i+2] = (Math.random() - 0.5) * 50 - 20;
         }
-        
         particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
-        
-        const particlesMaterial = new THREE.PointsMaterial({
-            size: 0.2,
-            color: 0x667eea,
-            transparent: true,
-            opacity: 0.5,
-            blending: THREE.AdditiveBlending
-        });
-        
+        const particlesMaterial = new THREE.PointsMaterial({ size: 0.2, color: 0x667eea, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending });
         const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
         scene.add(particlesMesh);
         
-        // Floating orbs
         const orbGeometry = new THREE.SphereGeometry(0.5, 32, 32);
-        const orbMaterial = new THREE.MeshStandardMaterial({
-            color: 0x667eea,
-            emissive: 0x667eea,
-            emissiveIntensity: 0.3,
-            metalness: 0.8,
-            roughness: 0.2
-        });
-        
+        const orbMaterial = new THREE.MeshStandardMaterial({ color: 0x667eea, emissive: 0x667eea, emissiveIntensity: 0.3, metalness: 0.8, roughness: 0.2 });
         const orbs = [];
         for(let i = 0; i < 8; i++) {
             const orb = new THREE.Mesh(orbGeometry, orbMaterial);
@@ -708,73 +455,58 @@
             orbs.push(orb);
         }
         
-        // Lights
         const ambientLight = new THREE.AmbientLight(0x404040);
         scene.add(ambientLight);
-        
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(5, 10, 7);
         scene.add(directionalLight);
-        
         const backLight = new THREE.PointLight(0x667eea, 0.5);
         backLight.position.set(0, 0, -10);
         scene.add(backLight);
         
-        // Animation
         let time = 0;
         function animate() {
             requestAnimationFrame(animate);
             time += 0.005;
-            
             particlesMesh.rotation.y = time * 0.05;
             particlesMesh.rotation.x = Math.sin(time * 0.1) * 0.1;
-            
             orbs.forEach((orb, i) => {
                 orb.position.x += Math.sin(time * 0.5 + i) * 0.005;
                 orb.position.y += Math.cos(time * 0.4 + i) * 0.005;
                 orb.rotation.x += 0.01;
                 orb.rotation.y += 0.01;
             });
-            
             renderer.render(scene, camera);
         }
-        
         animate();
-        
-        window.addEventListener('resize', onWindowResize, false);
-        function onWindowResize() {
+        window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        });
     </script>
 
     <script>
         const API_URL = window.location.origin;
         let token = null, user = null, currentSession = null, conversations = [], pendingId = null;
+        let currentAbortController = null;
+        let isStreaming = false;
+        let currentStreamingDiv = null;
+        let streamingContent = "";
+        let partialResponse = "";
+        let isStopped = false;
 
-        // Auto-resize textarea
         const textarea = document.getElementById('messageInput');
-        textarea.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-        });
-        textarea.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMessage();
-            }
-        });
+        textarea.addEventListener('input', function() { this.style.height = 'auto'; this.style.height = Math.min(this.scrollHeight, 120) + 'px'; });
+        textarea.addEventListener('keypress', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
 
         async function register() {
             const username = document.getElementById('regUsername').value.trim();
             const email = document.getElementById('regEmail').value.trim();
             const password = document.getElementById('regPassword').value;
             const confirm = document.getElementById('regConfirmPassword').value;
-            
             if (!username || !email || !password) { showError('Please fill all required fields'); return; }
             if (password !== confirm) { showError('Passwords do not match'); return; }
-            
             try {
                 const res = await fetch(`${API_URL}/auth/register`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -790,7 +522,6 @@
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
             if (!username || !password) { showError('Please enter username and password'); return; }
-            
             try {
                 const res = await fetch(`${API_URL}/auth/login`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -812,16 +543,8 @@
         }
 
         function logout() { localStorage.clear(); location.reload(); }
-        function showRegister() {
-            document.getElementById('loginForm').style.display = 'none';
-            document.getElementById('registerForm').style.display = 'block';
-            hideMessages();
-        }
-        function showLogin() {
-            document.getElementById('registerForm').style.display = 'none';
-            document.getElementById('loginForm').style.display = 'block';
-            hideMessages();
-        }
+        function showRegister() { document.getElementById('loginForm').style.display = 'none'; document.getElementById('registerForm').style.display = 'block'; hideMessages(); }
+        function showLogin() { document.getElementById('registerForm').style.display = 'none'; document.getElementById('loginForm').style.display = 'block'; hideMessages(); }
         function showError(msg) { const d = document.getElementById('errorMsg'); d.textContent = msg; d.style.display = 'block'; setTimeout(() => d.style.display = 'none', 3000); }
         function showSuccess(msg) { const d = document.getElementById('successMsg'); d.textContent = msg; d.style.display = 'block'; setTimeout(() => d.style.display = 'none', 3000); }
         function hideMessages() { document.getElementById('errorMsg').style.display = 'none'; document.getElementById('successMsg').style.display = 'none'; }
@@ -844,17 +567,11 @@
             `).join('');
         }
 
-        function toggleMenu(id) {
-            const menu = document.getElementById(`menu_${id}`);
-            document.querySelectorAll('.conv-dropdown').forEach(m => { if(m !== menu) m.classList.remove('show'); });
-            menu.classList.toggle('show');
-        }
-
+        function toggleMenu(id) { const menu = document.getElementById(`menu_${id}`); document.querySelectorAll('.conv-dropdown').forEach(m => { if(m !== menu) m.classList.remove('show'); }); menu.classList.toggle('show'); }
         function showRename(id) { pendingId = id; document.getElementById('renameModal').style.display = 'flex'; }
         function showDelete(id) { pendingId = id; document.getElementById('deleteModal').style.display = 'flex'; }
         function closeRename() { document.getElementById('renameModal').style.display = 'none'; pendingId = null; document.getElementById('renameInput').value = ''; }
         function closeDelete() { document.getElementById('deleteModal').style.display = 'none'; pendingId = null; }
-
         function confirmRename() {
             let newName = document.getElementById('renameInput').value;
             if(pendingId && newName) {
@@ -865,7 +582,6 @@
             }
             closeRename();
         }
-
         function confirmDelete() {
             if(pendingId) {
                 let idx = conversations.findIndex(c => c.id === pendingId);
@@ -901,11 +617,7 @@
             addMessage('bot', 'Hello! I\'m MediBot AI, your intelligent medical assistant. I provide real-time AI-powered health information. What health concern can I help with today?');
         }
 
-        let isStreaming = false;
-        let currentStreamingDiv = null;
-        let streamingContent = "";
-
-        async function streamResponse(text) {
+        async function streamResponse(fullText) {
             const messagesArea = document.getElementById('messages');
             if (!currentStreamingDiv) {
                 currentStreamingDiv = document.createElement('div');
@@ -916,22 +628,58 @@
                 messagesArea.appendChild(currentStreamingDiv);
                 streamingContent = "";
             }
-            
             const bubble = currentStreamingDiv.querySelector('.message-bubble');
             
-            for (let i = streamingContent.length; i < text.length; i++) {
-                streamingContent += text[i];
+            for (let i = streamingContent.length; i < fullText.length; i++) {
+                if (isStopped) {
+                    // Save partial response for continue
+                    partialResponse = fullText.substring(i);
+                    // Show stopped indicator
+                    const stopIndicator = document.createElement('div');
+                    stopIndicator.style.marginTop = '8px';
+                    stopIndicator.style.fontSize = '12px';
+                    stopIndicator.style.opacity = '0.6';
+                    stopIndicator.innerHTML = '⚠️ Generation paused. Click Continue to resume.';
+                    currentStreamingDiv.appendChild(stopIndicator);
+                    return;
+                }
+                streamingContent += fullText[i];
                 bubble.innerHTML = escapeHtml(streamingContent).replace(/\n/g, '<br>');
                 messagesArea.scrollTop = messagesArea.scrollHeight;
                 await new Promise(r => setTimeout(r, 10));
             }
-            
             const timeDiv = document.createElement('div');
             timeDiv.className = 'message-time';
             timeDiv.innerText = new Date().toLocaleTimeString();
             currentStreamingDiv.appendChild(timeDiv);
             currentStreamingDiv = null;
             streamingContent = "";
+            partialResponse = "";
+        }
+
+        function stopGeneration() {
+            isStopped = true;
+            document.getElementById('stopBtn').style.display = 'none';
+            document.getElementById('continueBtn').style.display = 'block';
+            if (currentAbortController) {
+                currentAbortController.abort();
+            }
+        }
+
+        async function continueGeneration() {
+            if (!partialResponse) return;
+            isStopped = false;
+            document.getElementById('stopBtn').style.display = 'block';
+            document.getElementById('continueBtn').style.display = 'none';
+            
+            // Remove the stopped indicator
+            if (currentStreamingDiv) {
+                const indicator = currentStreamingDiv.querySelector('div[style*="margin-top: 8px"]');
+                if (indicator) indicator.remove();
+            }
+            
+            await streamResponse(partialResponse);
+            partialResponse = "";
         }
 
         async function sendMessage() {
@@ -945,13 +693,22 @@
             input.style.height = 'auto';
             
             isStreaming = true;
+            isStopped = false;
+            partialResponse = "";
+            currentStreamingDiv = null;
+            streamingContent = "";
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('stopBtn').style.display = 'block';
+            document.getElementById('continueBtn').style.display = 'none';
             document.getElementById('typingIndicator').style.display = 'flex';
             
             try {
+                currentAbortController = new AbortController();
                 const res = await fetch(`${API_URL}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ message: msg, session_id: currentSession })
+                    body: JSON.stringify({ message: msg, session_id: currentSession }),
+                    signal: currentAbortController.signal
                 });
                 const data = await res.json();
                 document.getElementById('typingIndicator').style.display = 'none';
@@ -964,10 +721,17 @@
                     document.getElementById('chatTitle').innerText = conv.title;
                 }
             } catch(e) {
-                document.getElementById('typingIndicator').style.display = 'none';
-                addMessage('bot', 'Sorry, I encountered an error. Please try again.');
+                if (e.name !== 'AbortError') {
+                    document.getElementById('typingIndicator').style.display = 'none';
+                    addMessage('bot', 'Sorry, I encountered an error. Please try again.');
+                }
             } finally {
                 isStreaming = false;
+                currentAbortController = null;
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('stopBtn').style.display = 'none';
+                document.getElementById('continueBtn').style.display = 'none';
+                document.getElementById('typingIndicator').style.display = 'none';
             }
         }
 
