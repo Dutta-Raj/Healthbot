@@ -1,0 +1,167 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>MediBot AI</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 { text-align: center; color: #667eea; }
+        #chat {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+        .user { text-align: right; margin: 10px; }
+        .bot { text-align: left; margin: 10px; }
+        .user .msg { background: #667eea; color: white; display: inline-block; padding: 8px 12px; border-radius: 10px; }
+        .bot .msg { background: white; border: 1px solid #ddd; display: inline-block; padding: 8px 12px; border-radius: 10px; }
+        textarea { width: 80%; padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 10px; }
+        button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+        .login-box {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 400px;
+            margin: 50px auto;
+            text-align: center;
+        }
+        input { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 10px; }
+    </style>
+</head>
+<body>
+<div id="loginScreen" class="login-box">
+    <h2>🏥 MediBot AI</h2>
+    <div id="loginError" style="color:red; display:none;"></div>
+    <input type="text" id="username" placeholder="Username" value="ab">
+    <input type="password" id="password" placeholder="Password" value="ab123">
+    <button onclick="doLogin()">Login</button>
+    <p style="margin-top:20px;">Demo: ab / ab123</p>
+</div>
+
+<div id="chatScreen" style="display:none;">
+    <div class="container">
+        <h1>🏥 MediBot AI</h1>
+        <div id="chat"></div>
+        <div style="display: flex;">
+            <textarea id="message" rows="2" placeholder="Ask a medical question..." style="flex:1;"></textarea>
+            <button onclick="sendMessage()" style="margin-left:10px;">Send</button>
+        </div>
+        <button onclick="logout()" style="margin-top:10px; background:#dc3545;">Logout</button>
+    </div>
+</div>
+
+<script>
+    const API_URL = window.location.origin;
+    let token = null;
+    let sessionId = 'session_' + Date.now();
+
+    async function doLogin() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const errorDiv = document.getElementById('loginError');
+        
+        errorDiv.style.display = 'none';
+        
+        try {
+            const response = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                token = data.access_token;
+                localStorage.setItem('token', token);
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('chatScreen').style.display = 'block';
+                addMessage('bot', 'Hello! I\'m MediBot AI. How can I help you today?');
+            } else {
+                errorDiv.textContent = data.detail || 'Login failed';
+                errorDiv.style.display = 'block';
+            }
+        } catch (error) {
+            errorDiv.textContent = 'Cannot connect to server: ' + error.message;
+            errorDiv.style.display = 'block';
+        }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('message');
+        const message = input.value.trim();
+        if (!message || !token) return;
+        
+        addMessage('user', message);
+        input.value = '';
+        
+        try {
+            const response = await fetch(`${API_URL}/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ message, session_id: sessionId })
+            });
+            
+            const data = await response.json();
+            addMessage('bot', data.response);
+        } catch (error) {
+            addMessage('bot', 'Error: ' + error.message);
+        }
+    }
+
+    function addMessage(role, text) {
+        const chatDiv = document.getElementById('chat');
+        const div = document.createElement('div');
+        div.className = role;
+        div.innerHTML = `<div class="msg">${text}</div>`;
+        chatDiv.appendChild(div);
+        chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    function logout() {
+        localStorage.removeItem('token');
+        token = null;
+        document.getElementById('chatScreen').style.display = 'none';
+        document.getElementById('loginScreen').style.display = 'block';
+        document.getElementById('chat').innerHTML = '';
+    }
+
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+        token = savedToken;
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('chatScreen').style.display = 'block';
+        addMessage('bot', 'Welcome back! How can I help you today?');
+    }
+</script>
+</body>
+</html>

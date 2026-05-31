@@ -15,13 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve frontend files
-frontend_path = os.path.join(os.path.dirname(__file__), "src/frontend")
+# Serve frontend files from frontend folder
+frontend_path = os.path.join(os.path.dirname(__file__), "frontend")
 if os.path.exists(frontend_path):
-    # Mount static files
-    app.mount("/static", StaticFiles(directory=frontend_path), name="static")
+    app.mount("/frontend", StaticFiles(directory=frontend_path), name="frontend")
     
-    # Serve frontend at root
     @app.get("/")
     async def serve_frontend():
         index_file = os.path.join(frontend_path, "simple.html")
